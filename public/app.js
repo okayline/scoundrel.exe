@@ -5,7 +5,7 @@
 // that draws them wide can never push the line out of place.
 
 const W = 80, IN = W - 4;                     // screen width, and the width inside the frame
-const VERSION = "v0.7.3";
+const VERSION = "v0.8.1";
 const RANK = { 11: "J", 12: "Q", 13: "K", 14: "A" };
 const SUIT = { C: "♣", S: "♠", D: "♦", H: "♥" };
 const KIND = { monster: "DEMON", weapon: "BLADE", potion: "HEALTH" };
@@ -113,7 +113,8 @@ function draw() {
 }
 
 function header(left) {
-  return spread(left, mode === "title" ? nowStamp() : `NEXT DEAL ${countdown()}`);
+  const who = T && T.name ? T.name.toUpperCase() : "GUEST";
+  return spread(`${left}   ${who}`, mode === "title" ? nowStamp() : `NEXT DEAL ${countdown()}`);
 }
 
 const logRow = (i) => [S("> ", "dim"), typeof log[i] === "string" ? S(log[i], i === 2 ? "flavor" : "") : log[i]];
@@ -247,7 +248,7 @@ function gameScreen() {
   for (let i = 0; i < 17; i++) rows.push([...padTo(L[i] || [], 47), S(" | ", "fr"), ...(R[i] || [])]);
   const n = room.length;
   return ["=", header(`SCOUNDREL.EXE   DECK ${deckNo(dayNo(run.day))}`), "=", ...rows, "-", ...logRows(), "-",
-    bar([["[1-4] TAKE", null], ["[B]ARE HANDS", "b", !room.some((c) => c.kind === "monster"), bare], ["[S]KIP ROOM", "s", !v.canSkip], ["[?]", "?"], ["[ESC] TITLE", "esc"],
+    bar([["[1-4] TAKE", null], ["[B]ARE HANDS", "b", !room.some((c) => c.kind === "monster"), bare], ["[S]KIP ROOM", "s", !v.canSkip], ["[TAB] BOARD", "tab"], ["[?]", "?"], ["[ESC]", "esc"],
       ...(T.admin ? [["[R]ESTART", "r"]] : [])]),
     "="];
 }
@@ -866,6 +867,7 @@ async function key(k) {
     if (k === "s") { if (run.view.canSkip) return act({ type: "skip" }); say(S(`CAN'T SKIP: ${skipWhy(run.view).replace(/^no \(|\)$/g, "").toUpperCase()}.`, "demon")); return draw(); }
     if (k === "esc" && bare) { bare = false; return draw(); }
     if (k === "esc") { mode = "title"; return draw(); }
+    if (k === "tab") { go("board"); return loadBoard(run.day); }
   }
   if (mode === "end") {
     if (k === "s") return copyShare();
@@ -876,7 +878,7 @@ async function key(k) {
   }
 }
 
-const KEYS = { Enter: "enter", Escape: "esc", ArrowLeft: "left", ArrowRight: "right", "?": "?" };
+const KEYS = { Enter: "enter", Escape: "esc", Tab: "tab", ArrowLeft: "left", ArrowRight: "right", "?": "?" };
 document.addEventListener("keydown", (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   if ((mode === "name" || mode === "loadcode" || guestBox()) && !["Enter", "Escape"].includes(e.key)) return;   // typing in a box

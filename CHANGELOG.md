@@ -4,6 +4,14 @@ Newest first. Times are Hawaii time (HST).
 
 ---
 
+## v0.8.1 — "Name Tag"
+**Wed Oct 14, 2026 · 5:59 AM HST**
+
+- Your name is at the top of every screen (or GUEST).
+- **[TAB] BOARD** in the middle of a run. The ledger is inside the board, and ESC takes you back to your run.
+- In a run, **[ESC]** takes you to the front page.
+- The version in the corner says the right number again.
+
 ## v0.8.0 — "Fewer Doors"
 **Wed Oct 14, 2026 · 5:55 AM HST**
 
