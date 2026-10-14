@@ -4,6 +4,14 @@ Newest first. Times are Hawaii time (HST).
 
 ---
 
+## v0.8.4 — "Free Play"
+**Wed Oct 14, 2026 · 6:35 AM HST**
+
+- **[F]REE PLAY:** a random deck, just for you. It never counts anywhere: not on the board, not on the ledger.
+- New here? You get **one free run to learn the rules** before your first daily run.
+- After that, free play opens once you've played **today's deck**. Play as many as you like while you wait for tomorrow.
+- Your **best free score** is kept on this device.
+
 ## v0.8.3 — "Sign Here"
 **Wed Oct 14, 2026 · 6:20 AM HST**
 

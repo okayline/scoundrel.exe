@@ -5,7 +5,7 @@
 // that draws them wide can never push the line out of place.
 
 const W = 80, IN = W - 4;                     // screen width, and the width inside the frame
-const VERSION = "v0.8.3";
+const VERSION = "v0.8.4";
 const RANK = { 11: "J", 12: "Q", 13: "K", 14: "A" };
 const SUIT = { C: "♣", S: "♠", D: "♦", H: "♥" };
 const KIND = { monster: "DEMON", weapon: "BLADE", potion: "HEALTH" };
@@ -22,6 +22,16 @@ let mode = "title";      // title | game | end | board | ledger | help | name | 
 let back = "title";      // where Esc goes from board/help/name
 let bare = false;        // [B] pressed: the next demon is fought bare-handed
 let between = false;
+// free play: a random deck played only in this browser. Never sent anywhere, never ranked.
+let G = null;            // the rules engine, loaded the first time free play starts
+let freeRun = null;      // the free run in progress (or just finished)
+let everPlayed = false;  // this player has finished a ranked run before (from /api/history)
+const store = { get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch { /* fine */ } } };
+const dailyDone = () => !!(T && T.run && T.run.status !== "playing");
+// one free run to learn the rules before your first ranked run; after that, free play opens once today's run is done
+const canFree = () => !!T && (dailyDone() || (!everPlayed && !T.run && !T.unfinished && !store.get("scoundrel.learned")));
+const freeOpen = () => canFree() || !!(freeRun && freeRun.status === "playing");   // a free run you left can always be picked back up
 let pulseK = null;       // the card just clicked: it squeezes for a moment     // the short pause between rooms
 let busy = false;
 let deadline = 0;        // when the next deck deals (ms)
@@ -174,8 +184,8 @@ function titleScreen() {
     "",
     center(r && r.status !== "playing" ? (r.status === "won" ? "YOU CLEARED TODAY'S DECK." : "TODAY'S DECK GOT YOU.") : "44 CARDS. 20 HP. ONE RUN."),
     "~", "-", ...(guestBox() ? whoRows() : logRows()), "-",
-    T.name ? bar([[go, "p"], ["[B]OARD", "b"], ["[U]SER", "u"], ["[?]", "?"]])
-      : bar([[go, "p"], ["[L]OG IN", "l"], ["[B]OARD", "b"], ["[?]", "?"]]),
+    T.name ? bar([[go, "p"], ...(freeOpen() ? [["[F]REE PLAY", "f"]] : []), ["[B]OARD", "b"], ["[U]SER", "u"], ["[?]", "?"]])
+      : bar([[go, "p"], ...(freeOpen() ? [["[F]REE PLAY", "f"]] : []), ["[L]OG IN", "l"], ["[B]OARD", "b"], ["[?]", "?"]]),
     "="];
 }
 
@@ -255,7 +265,7 @@ function gameScreen() {
   const rows = [];
   for (let i = 0; i < 17; i++) rows.push([...padTo(L[i] || [], 47), S(" | ", "fr"), ...(R[i] || [])]);
   const n = room.length;
-  return ["=", header(`SCOUNDREL.EXE   DECK ${deckNo(dayNo(run.day))}`), "=", ...rows, "-", ...logRows(), "-",
+  return ["=", header(run.free ? "SCOUNDREL.EXE   FREE PLAY" : `SCOUNDREL.EXE   DECK ${deckNo(dayNo(run.day))}`), "=", ...rows, "-", ...logRows(), "-",
     bar([["[1-4] TAKE", null], ["[B]ARE HANDS", "b", !room.some((c) => c.kind === "monster"), bare], ["[S]KIP ROOM", "s", !v.canSkip], ["[TAB] BOARD", "tab"], ["[?]", "?"], ["[ESC]", "esc"],
       ...(T.admin ? [["[R]ESTART", "r"]] : [])]),
     "="];
@@ -294,7 +304,7 @@ function endScreen() {
     ? [S("DUNGEON CLEARED", "gold"), "", `ROOM ${pad2(v.turn)}  ·  HP ${v.health}/20`, run.score > v.health ? `+${run.score - v.health} HEALTH BONUS` : ""]
     : [S("YOU WERE DELETED", "demon"), "", `ROOM ${pad2(v.turn)}  ·  HP ${v.health}`, `${v.deckMonsters + v.room.filter((x) => x.kind === "monster").length} DEMONS STILL IN THE DECK`];
   const stat = (label, value) => ["                        ", S(dots(label), "dim"), value];
-  return ["=", header(`SCOUNDREL.EXE   DECK ${deckNo(dayNo(run.day))}`), "=", "~",
+  return ["=", header(run.free ? "SCOUNDREL.EXE   FREE PLAY" : `SCOUNDREL.EXE   DECK ${deckNo(dayNo(run.day))}`), "=", "~",
     [pre, ...padTo(card[0], 9)],
     [pre, ...padTo(card[1], 9), "      ", right[0]],
     [pre, ...padTo(card[2], 9)],
@@ -302,11 +312,13 @@ function endScreen() {
     [pre, ...padTo(card[4], 9), "      ", right[3]],
     "",
     stat("SCORE", S(String(run.score), won ? "gold" : "demon")),
+    run.free ? stat("BEST FREE", store.get("scoundrel.bestFree") || String(run.score)) :
     stat("RANK", T.admin ? "ADMIN RUN (doesn't count)" : you ? `#${you.rank} of ${board.played}${you.named ? "" : "  (no name yet)"}` : "..."),
     "",
     ["                        ", S(marks, "marks")],
     "~", "-", ...logRows(), "-",
-    bar([["[S]HARE", "s"], ["[B]OARD", "b"], ["[ESC] TITLE", "esc"], ...(T.admin ? [["[R]ESTART", "r"]] : [])]),
+    run.free ? bar([...(canFree() ? [["[F]REE PLAY AGAIN", "f"]] : []), ["[ESC] TITLE", "esc"]])
+      : bar([["[S]HARE", "s"], ["[B]OARD", "b"], ["[ESC] TITLE", "esc"], ...(T.admin ? [["[R]ESTART", "r"]] : [])]),
     "="];
 }
 
@@ -741,11 +753,12 @@ async function take(k) {
 async function act(action) {
   busy = true;
   try {
-    const r = await api("/api/move", { day: run.day, n: run.n, action });
+    const r = run.free ? freeMove(action) : await api("/api/move", { day: run.day, n: run.n, action });
     const newRoom = r.status === "playing" && run.view && r.view.turn !== run.view.turn;
     if (newRoom) { between = true; draw(); await new Promise((ok) => setTimeout(ok, 900)); between = false; }
     run = r;
-    if (run.day === T.day) T.run = r; else if (r.status !== "playing") T.unfinished = null;
+    if (r.free) freeRun = r;
+    else if (run.day === T.day) T.run = r; else if (r.status !== "playing") T.unfinished = null;
     bare = false;
     tell(r.events || []);
     if (r.status !== "playing") { busy = false; draw(); setTimeout(showEnd, 1400); return; }
@@ -771,8 +784,39 @@ async function restartRun() {
   draw();
 }
 
+// free play: start one (or pick the current one back up)
+async function startFree() {
+  if (busy || !freeOpen()) return;
+  if (freeRun && freeRun.status === "playing") { run = freeRun; mode = "game"; say("Back in the free run.", pick(FLAVOR.deal)); return draw(); }
+  busy = true;
+  try { G = G || await import(`./engine/scoundrel.js?v=${VERSION.slice(1)}`); }
+  catch { busy = false; return oops("Couldn't load free play."); }
+  if (!dailyDone()) store.set("scoundrel.learned", "1");   // the one learning run is used up
+  const seed = [...crypto.getRandomValues(new Uint32Array(2))].map((x) => x.toString(16)).join("");
+  freeRun = freeView(G.newGame(seed), null);
+  run = freeRun; mode = "game"; bare = false; busy = false;
+  say(["Free play. A random deck, just for you.", "It never counts anywhere."], pick(FLAVOR.start));
+  draw();
+}
+function freeView(state, events) {
+  const done = state.status !== "playing";
+  return { free: true, state, day: T.day, n: state.log.length, status: state.status, score: state.score, view: G.publicView(state),
+    marks: done ? G.shareMarks(state.seed, state.log) : null, ...(events ? { events } : {}) };
+}
+function freeMove(action) {
+  try { const { state, events } = G.apply(run.state, action); return freeView(state, events); }
+  catch (e) { throw new Error(e.message); }
+}
+// back to the front page from a free run: the daily run is "run" again
+function leaveFree() { run = T.unfinished || T.run; mode = "title"; draw(); }
+
 async function showEnd() {
   if (!run || run.status === "playing") return;   // an admin restarted before the end screen came up
+  if (run.free) {
+    const best = store.get("scoundrel.bestFree");
+    if (best == null || run.score > Number(best)) store.set("scoundrel.bestFree", String(run.score));
+    mode = "end"; return draw();
+  }
   mode = "end";
   // a guest who finished: offer to put a name on the board (that names this browser's player)
   if (!T.name && !T.admin) { mode = "name"; back = "end"; nameErr = ""; }
@@ -872,15 +916,21 @@ async function key(k) {
     if (k === "b") { go("board"); return loadBoard(T.day); }
     if (k === "l" && !T.name) return quickLogIn();
     if (k === "u" && T.name) { acctBack = "title"; return openAccount(); }
+    if (k === "f" && freeOpen()) return startFree();
   }
-  if (k === "r" && T.admin && (mode === "game" || mode === "end")) return restartRun();
+  if (k === "r" && T.admin && !run.free && (mode === "game" || mode === "end")) return restartRun();
   if (mode === "game") {
     if (/^[1-4]$/.test(k)) return take(Number(k) - 1);
     if (k === "b" && run.view.room.some((c) => c.kind === "monster")) { bare = !bare; say(bare ? "Bare hands. Pick a demon." : "Blade back up.", undefined); return draw(); }
     if (k === "s") { if (run.view.canSkip) return act({ type: "skip" }); say(S(`CAN'T SKIP: ${skipWhy(run.view).replace(/^no \(|\)$/g, "").toUpperCase()}.`, "demon")); return draw(); }
     if (k === "esc" && bare) { bare = false; return draw(); }
-    if (k === "esc") { mode = "title"; return draw(); }
+    if (k === "esc") { if (run.free) return leaveFree(); mode = "title"; return draw(); }
     if (k === "tab") { go("board"); return loadBoard(run.day); }
+  }
+  if (mode === "end" && run.free) {
+    if (k === "f" && canFree()) { freeRun = null; return startFree(); }
+    if (k === "esc" || k === "enter") return leaveFree();
+    return;
   }
   if (mode === "end") {
     if (k === "s") return copyShare();
@@ -950,4 +1000,5 @@ setInterval(async () => {
   else say(["A fresh deck is dealt. Everyone gets the same one.", "You get one run at it. No do-overs."], "");
   draw();
   api(`/api/leaderboard?day=${T.day}`).then((b) => { board = b; boardDay = T.day; if (mode === "title") draw(); }).catch(() => {});
+  api("/api/history").then((h) => { everPlayed = h.runs.some((x) => x.status !== "playing"); if (mode === "title") draw(); }).catch(() => {});
 })();

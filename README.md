@@ -1,4 +1,4 @@
-# scoundrel.exe (v0.8.3)
+# scoundrel.exe (v0.8.4)
 
 A daily seeded Scoundrel game: everyone plays the same 44-card deck each UTC day.
 Scoundrel is a solo card game by Zach Gage and Kurt Bieg (2011).
@@ -7,7 +7,8 @@ Pure JavaScript modules with no dependencies. The same code runs in the browser,
 Workers and in Node, so the server and the screen can never disagree about the rules.
 
 ```
-engine/scoundrel.js   the rules: deck, shuffle, actions, scoring, replay, share marks
+public/engine/scoundrel.js   the rules: deck, shuffle, actions, scoring, replay, share marks
+                      (in public/ so free play can run them in the browser; engine/scoundrel.js re-exports it)
 engine/daily.js       the daily seed (HMAC of the UTC date with a server secret)
 test/                 tests (node --test)
 src/worker.js         the Cloudflare Worker: daily deal, players, moves, leaderboard, ledger
@@ -100,6 +101,9 @@ npx wrangler d1 execute scoundrel-db --remote --command "DELETE FROM ledger"
   Passkeys belong to the site's address: if the game moves to a new domain, use a save code there.
   Adding a passkey without a save code nudges you to make one as a backup. Save codes can be downloaded as a .txt.
 - Once a day is over, its seed is public on the leaderboard, so anyone can check the scores.
+- **Free play** is a random deck played only in the browser: never sent to the server, never ranked.
+  New players get one free run to learn the rules; after that it opens once today's ranked run is done.
+  The best free score is kept in the browser.
 
 ## The ledger
 
