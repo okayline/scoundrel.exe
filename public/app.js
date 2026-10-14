@@ -5,7 +5,7 @@
 // that draws them wide can never push the line out of place.
 
 const W = 80, IN = W - 4;                     // screen width, and the width inside the frame
-const VERSION = "v0.8.2";
+const VERSION = "v0.8.3";
 const RANK = { 11: "J", 12: "Q", 13: "K", 14: "A" };
 const SUIT = { C: "♣", S: "♠", D: "♦", H: "♥" };
 const KIND = { monster: "DEMON", weapon: "BLADE", potion: "HEALTH" };
@@ -113,6 +113,7 @@ function draw() {
   const box = document.getElementById("nameinput");
   if (box) { if (keepName != null) box.value = keepName; box.focus(); }
   if (pulseK) $screen.querySelectorAll(`[data-k="${pulseK}"]`).forEach((el) => el.classList.add("pulse"));
+  if (downK && mode === "game") $screen.querySelectorAll(`[data-k="${downK}"]`).forEach((el) => el.classList.add("pressed"));
 }
 
 function header(left) {
@@ -203,18 +204,19 @@ function gameScreen() {
   const at = (k) => (between || slots[k] == null ? null : room[slots[k]]);
   const blank = "         ";
   // the little v over the card the mouse is on
-  const pickRow = [];
+  const pad = "  ";   // centers the 42-wide card row in the 47-wide left side
+  const pickRow = [pad];
   if (between) pickRow.push(S("                NEXT ROOM...", "dim"));
   else for (let k = 0; k < 4; k++) { if (k) pickRow.push("  "); pickRow.push(at(k) && hoverK === String(k + 1) ? "    v    " : blank); }
   L.push(pickRow);
   const cards = [0, 1, 2, 3].map((k) => (at(k) ? cardRows(at(k), String(k + 1)) : null));
   for (let row = 0; row < 5; row++) {
-    const segs = [];
+    const segs = [pad];
     for (let k = 0; k < 4; k++) { if (k) segs.push("  "); if (cards[k]) segs.push(...cards[k][row]); else segs.push(blank); }
     L.push(segs);
   }
   // labels and what each card would do
-  const lab = [], hint = [];
+  const lab = [pad], hint = [pad];
   for (let k = 0; k < 4; k++) {
     if (k) { lab.push("  "); hint.push("  "); }
     const c = at(k);
@@ -247,8 +249,8 @@ function gameScreen() {
   R.push(["HEAL   ", v.potionUsedThisRoom ? S("used", "dim") : "ready"]);
   R.push(["SKIP   ", v.canSkip ? "ready" : S(skipWhy(v), "dim")]);
   if (v.weapon && v.weapon.kills.length) R.push([], ["SLAIN  ", S(v.weapon.kills.slice(-5).map(nm).join(" "), "demon")]);
-  R.push([], ["LEFT   ", `${v.deckMonsters} DEMON${v.deckMonsters === 1 ? "" : "S"}`],
-    ["       ", `${v.deckWeapons} BLADE${v.deckWeapons === 1 ? "" : "S"}`], ["       ", `${v.deckPotions} HEALTH`]);
+  R.push([], ["IN DECK  ", `${String(v.deckMonsters).padStart(2)} DEMON${v.deckMonsters === 1 ? "" : "S"}`],
+    ["         ", `${String(v.deckWeapons).padStart(2)} BLADE${v.deckWeapons === 1 ? "" : "S"}`], ["         ", `${String(v.deckPotions).padStart(2)} HEALTH CARD${v.deckPotions === 1 ? "" : "S"}`]);
 
   const rows = [];
   for (let i = 0; i < 17; i++) rows.push([...padTo(L[i] || [], 47), S(" | ", "fr"), ...(R[i] || [])]);
@@ -415,12 +417,12 @@ function helpScreen() {
 
 function nameScreen() {
   return ["=", spread("SCOUNDREL.EXE   NAME", ""), "=", "", "",
-    center("PICK A NAME FOR THE LEADERBOARD"), "",
+    center(back === "end" ? "PUT YOUR NAME ON THE BOARD?" : "PICK A NAME FOR THE LEADERBOARD"), "",
     center(S("2 to 16 letters, numbers, spaces, - _ .", "dim")), "", "",
     [" ".repeat(25), "NAME: ", { input: true, w: 16, value: T.name || "" }], "",
     center(nameErr ? S(nameErr.toUpperCase(), "demon") : S("Runs without a name still count, they just don't show.", "dim")),
     "~", "-", ...logRows(), "-",
-    bar([["[ENTER] SAVE", "enter"], ["[ESC] BACK", "esc"]]), "="];
+    bar([["[ENTER] SAVE", "enter"], [back === "end" ? "[ESC] NO THANKS" : "[ESC] BACK", "esc"]]), "="];
 }
 
 // ---------- account: save codes and passkeys ----------
@@ -666,17 +668,17 @@ async function loadBoard(day) {
 // ---------- flavor ----------
 
 const FLAVOR = {
-  armed: ["The blade bites.", "Clean through.", "It folds around the edge.", "Steel, then silence."],
-  scratch: ["It never got close.", "Not even a scratch.", "The blade does all the work."],
-  bare: ["Knuckles meet teeth.", "That one will bruise.", "You took that one personally.", "Your hands will remember this."],
-  heal: ["It burns going down.", "Warmth spreads.", "The static in your head clears."],
-  wasted: ["Too much at once. It spills.", "Your body won't take more right now."],
-  equip: ["It hums in your hand.", "A fresh edge.", "Light catches the blade."],
-  skip: ["You back out quietly.", "Not this one.", "The door closes on them."],
-  deal: ["The room shifts. New cards slide in.", "Something moves in the dark.", "Fresh data loads in."],
-  start: ["The deck is shuffled. Everyone gets the same one.", "Jacking in.", "The dungeon wakes up."],
-  won: ["The last card falls. Quiet.", "You walk out the other side."],
-  dead: ["Signal lost.", "The screen goes dark.", "Should have kept the blade fresh."],
+  armed: ["The blade bites.", "Clean through.", "It folds around the edge.", "Steel, then silence.", "Black blood on chrome.", "It goes down hissing.", "The edge finds the seam.", "Sparks, then nothing."],
+  scratch: ["It never got close.", "Not even a scratch.", "The blade does all the work.", "Over before it started.", "It dies mid-glitch.", "You barely felt the swing."],
+  bare: ["Knuckles meet teeth.", "That one will bruise.", "You took that one personally.", "Your hands will remember this.", "Bone on circuitry.", "Your knuckles split. Theirs too.", "It bites. You bite back.", "No edge. Just fists and static."],
+  heal: ["It burns going down.", "Warmth spreads.", "The static in your head clears.", "The red fades from your vision.", "Something stitches you back together.", "Cold relief in a dead room."],
+  wasted: ["Too much at once. It spills.", "Your body won't take more right now.", "It runs out of you. Nothing left to fix.", "The dose fizzles. Already full."],
+  equip: ["It hums in your hand.", "A fresh edge.", "Light catches the blade.", "The grip is still warm.", "Someone died holding this.", "Cold steel, fresh firmware."],
+  skip: ["You back out quietly.", "Not this one.", "The door closes on them.", "Not today.", "You slip past in the static.", "They'll still be here later."],
+  deal: ["The room shifts. New cards slide in.", "Something moves in the dark.", "Fresh data loads in.", "The walls redraw themselves.", "Another room renders in.", "Something was waiting here.", "The lights flicker on."],
+  start: ["The deck is shuffled. Everyone gets the same one.", "Jacking in.", "The dungeon wakes up.", "The dungeon boots up.", "Signal found.", "Forty-four cards. One way out."],
+  won: ["The last card falls. Quiet.", "You walk out the other side.", "The feed cuts to white.", "Nothing left breathing in the deck.", "Logged out alive."],
+  dead: ["Signal lost.", "The screen goes dark.", "Should have kept the blade fresh.", "Connection terminated.", "Your vitals flatline.", "The dungeon keeps your data."],
 };
 
 function tell(events) {
@@ -731,7 +733,6 @@ async function take(k) {
   const i = v.slots ? v.slots[k] : k;
   const c = i == null ? null : v.room[i];
   if (!c) return;
-  pulseK = String(k + 1); draw(); setTimeout(() => { pulseK = null; }, 250);
   const action = { type: "take", card: i };
   if (c.kind === "monster" && (bare || !canHit(run.view, c))) action.bare = true;
   await act(action);
@@ -773,6 +774,8 @@ async function restartRun() {
 async function showEnd() {
   if (!run || run.status === "playing") return;   // an admin restarted before the end screen came up
   mode = "end";
+  // a guest who finished: offer to put a name on the board (that names this browser's player)
+  if (!T.name && !T.admin) { mode = "name"; back = "end"; nameErr = ""; }
   draw();
   try { board = await api(`/api/leaderboard?day=${run.day}`); boardDay = run.day; share = await api(`/api/share?day=${run.day}`).catch(() => null); } catch { /* still show the end */ }
   draw();
@@ -895,6 +898,7 @@ document.addEventListener("keydown", (e) => {
   const k = KEYS[e.key] || (e.key.length === 1 ? e.key.toLowerCase() : null);
   if (!k) return;
   e.preventDefault();
+  if (mode === "game" && /^[1-4]$/.test(k) && !busy) { pulseK = k; setTimeout(() => { pulseK = null; }, 250); }
   key(k);
 });
 $screen.addEventListener("mouseover", (e) => {
@@ -909,12 +913,14 @@ let downK = null;
 $screen.addEventListener("pointerdown", (e) => {
   const b = e.target.closest("[data-k]");
   downK = b && !b.classList.contains("off") ? b.dataset.k : null;
+  if (downK && /^[1-4]$/.test(downK)) draw();   // a card pushes in while held
 });
 $screen.addEventListener("pointerup", (e) => {
   const b = e.target.closest("[data-k]");
   const k = b && !b.classList.contains("off") ? b.dataset.k : null;
-  if (k && k === downK) key(k);
-  downK = null;
+  const was = downK; downK = null;
+  if (/^[1-4]$/.test(was || "")) draw();         // and pops back out on release
+  if (k && k === was) key(k);
 });
 
 // the clock: redraw each second (but not while typing a name), and a new deck at midnight UTC

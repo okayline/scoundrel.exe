@@ -4,6 +4,15 @@ Newest first. Times are Hawaii time (HST).
 
 ---
 
+## v0.8.3 — "Sign Here"
+**Wed Oct 14, 2026 · 6:20 AM HST**
+
+- Finished a run as a guest? The game asks **PUT YOUR NAME ON THE BOARD?** Type a name and press ENTER, and your run shows up on the leaderboard. **[ESC] NO THANKS** skips it.
+- Taking a card: it **pushes in** while you hold the click and pops back out when you let go.
+- The cards sit in the middle of the table.
+- What's left in the deck says **IN DECK**, so it's not mixed up with your HP.
+- **35 new flavor lines.** Darker, with more static.
+
 ## v0.8.2 — "Click Means Click"
 **Wed Oct 14, 2026 · 6:12 AM HST**
 
