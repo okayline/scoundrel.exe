@@ -5,7 +5,7 @@
 // that draws them wide can never push the line out of place.
 
 const W = 80, IN = W - 4;                     // screen width, and the width inside the frame
-const VERSION = "v0.5.0";
+const VERSION = "v0.6.0";
 const RANK = { 11: "J", 12: "Q", 13: "K", 14: "A" };
 const SUIT = { C: "♣", S: "♠", D: "♦", H: "♥" };
 const KIND = { monster: "DEMON", weapon: "BLADE", potion: "HEALTH" };
@@ -28,11 +28,10 @@ let nameErr = "";
 let ledgerData = null;   // the ledger page on screen
 let ledgerPages = [];    // the "before" of each newer page, for going back up
 let ledgerBefore = null; // this page: entries before this id (null = the newest)
-let hoverK = null;
+let hoverK = null;        // the card (1-4) the mouse is over: it gets a little v above it
 let acct = null;         // /api/account, on the account screen
 let newCode = null;      // a save code just made (shown once)
 let forgetArmed = false; // account screen: F, then a number, forgets that code or passkey
-let restartArmed = false; // testers: R once arms the restart, R again does it       // the card (1-4) the mouse is over: it gets a little v above it
 
 // ---------- small helpers ----------
 
@@ -159,12 +158,11 @@ function titleScreen() {
     stat("TODAY'S DECK", deckNo(T.number)),
     stat("DEALT TO", played == null ? "..." : `${played} RUNNER${played === 1 ? "" : "S"}`),
     stat("NEXT DEAL IN", countdown()),
-    stat("PLAYING AS", T.name ? T.name + (T.tester ? "  (TESTER)" : "") : S("no name yet", "dim")),
+    stat("PLAYING AS", T.name ? T.name + (T.admin ? "  (ADMIN)" : "") : S("no name yet", "dim")),
     "",
     center(r && r.status !== "playing" ? (r.status === "won" ? "YOU CLEARED TODAY'S DECK." : "TODAY'S DECK GOT YOU.") : "44 CARDS. 20 HP. ONE RUN."),
     "~", "-", ...logRows(), "-",
-    bar([[go, "enter"], ["[B]OARD", "b"], ["[L]EDGER", "l"], ["[H]ELP", "h"], ["[A]CCOUNT", "a"],
-      ...(T.admin ? [[`[T]EST ${T.tester ? "ON" : "OFF"}`, "t", false, T.tester]] : [])]),
+    bar([[go, "enter"], ["[B]OARD", "b"], ["[L]EDGER", "l"], ["[H]ELP", "h"], ["[A]CCOUNT", "a"]]),
     "="];
 }
 
@@ -222,7 +220,7 @@ function gameScreen() {
   const n = room.length;
   return ["=", header(`SCOUNDREL.EXE   DECK ${deckNo(dayNo(run.day))}`), "=", ...rows, "-", ...logRows(), "-",
     bar([[`[1-${n}] TAKE`, null], ["[B]ARE HANDS", "b", !room.some((c) => c.kind === "monster"), bare], ["[S]KIP ROOM", "s", !v.canSkip], ["[?] HELP", "h"],
-      ...(T.tester ? [["[R]ESTART", "r", false, restartArmed]] : [])]),
+      ...(T.admin ? [["[R]ESTART", "r"]] : [])]),
     "="];
 }
 
@@ -267,12 +265,12 @@ function endScreen() {
     [pre, ...padTo(card[4], 9), "      ", right[3]],
     "",
     stat("SCORE", S(String(run.score), won ? "gold" : "demon")),
-    stat("RANK", you ? (you.tester ? "TESTER RUN (not ranked)" : `#${you.rank} of ${board.played}${you.named ? "" : "  (no name yet)"}`) : "..."),
+    stat("RANK", T.admin ? "ADMIN RUN (doesn't count)" : you ? `#${you.rank} of ${board.played}${you.named ? "" : "  (no name yet)"}` : "..."),
     "",
     ["                        ", S(marks, "marks")],
     "~", "-", ...logRows(), "-",
     bar([["[C]OPY SHARE", "c"], ["[B]OARD", "b"], ["[L]EDGER", "l"], ["[A]CCOUNT", "a"], ["[ESC] TITLE", "esc"],
-      ...(T.tester ? [["[R]ESTART", "r", false, restartArmed]] : [])]),
+      ...(T.admin ? [["[R]ESTART", "r"]] : [])]),
     "="];
 }
 
@@ -311,8 +309,6 @@ const fit = (t, w) => (t.length > w ? t.slice(0, w - 1) + "…" : t);
 // one ledger entry as words: what happened, from its sealed record
 function ledgerText(e) {
   if (e.kind === "deal") { const r = JSON.parse(e.record); return `deck ${deckNo(dayNo(e.day))} dealt · seed hash ${r.seed_hash.slice(0, 6)}…${r.seed_hash.slice(-4)}`; }
-  if (e.kind === "tester") { const r = JSON.parse(e.record); return `switched tester ${r.on ? "ON" : "OFF"}`; }
-  if (e.kind === "void") { const r = JSON.parse(e.record); return `TESTER RESTART · threw away a run (${r.moves} move${r.moves === 1 ? "" : "s"})`; }
   if (e.kind === "run") {
     const r = JSON.parse(e.record);
     return r.status === "won" ? `CLEARED · HP ${r.hp} · score ${r.score}` : `DELETED in room ${pad2(r.room)} · score ${r.score}`;
@@ -403,7 +399,7 @@ function accountScreen() {
   const rows = [""];
   if (!a) rows.push(S("  Loading...", "dim"));
   else {
-    const flags = [a.admin && "ADMIN", a.tester && "TESTER"].filter(Boolean).join(", ");
+    const flags = a.admin ? "ADMIN" : "";
     rows.push(stat("NAME", a.name ? a.name + (flags ? `  (${flags})` : "") : S("no name yet", "dim")));
     rows.push(stat("LOADED ON", a.player ? `${a.devices} browser${a.devices === 1 ? "" : "s"} / device${a.devices === 1 ? "" : "s"}` : S("nothing yet", "dim")));
     rows.push("");
@@ -651,39 +647,22 @@ async function act(action) {
   draw();
 }
 
-// admins: switch tester on or off (sealed on the ledger)
-async function toggleTester() {
-  if (busy) return;
-  busy = true;
-  try {
-    const d = await api("/api/tester", { on: !T.tester });
-    T.tester = d.tester;
-    say(T.tester ? "Tester ON. [R]ESTART as often as you like. You're off the board." : "Tester OFF. One ranked run a day again.",
-      "The switch is written on the ledger.");
-    board = null;
-    api(`/api/leaderboard?day=${T.day}`).then((b) => { board = b; boardDay = T.day; if (mode === "title") draw(); }).catch(() => {});
-  } catch (e) { say(S(e.message.toUpperCase(), "demon")); }
-  busy = false;
-  draw();
-}
-
-// testers: throw today's run away and deal the same deck again (R twice)
+// admins: a fresh deal of today's deck, any time (admin runs don't count anywhere)
 async function restartRun() {
   if (busy) return;
-  if (!restartArmed) { restartArmed = true; say(S("RESTART? PRESS R AGAIN TO THROW THIS RUN AWAY.", "demon"), "It stays on the ledger as a tester restart."); return draw(); }
-  restartArmed = false; busy = true;
+  busy = true;
   try {
     const d = await api("/api/restart", {});
     run = d.run; T.run = d.run; bare = false;
     mode = "game";
-    say(["Run thrown away. Same deck, dealt again.", `Room 01. ${run.view.deckCount} cards wait behind it.`], "Again.");
+    say(["Fresh deal.", `Room 01. ${run.view.deckCount} cards wait behind it.`], "Admin run: this one doesn't count.");
   } catch (e) { say(S(e.message.toUpperCase(), "demon")); }
   busy = false;
   draw();
 }
 
 async function showEnd() {
-  if (!run || run.status === "playing") return;   // a tester restarted before the end screen came up
+  if (!run || run.status === "playing") return;   // an admin restarted before the end screen came up
   mode = "end";
   draw();
   try { board = await api(`/api/leaderboard?day=${run.day}`); boardDay = run.day; share = await api(`/api/share?day=${run.day}`).catch(() => null); } catch { /* still show the end */ }
@@ -769,10 +748,8 @@ async function key(k) {
     if (k === "b") { go("board"); return loadBoard(T.day); }
     if (k === "l") return openLedger();
     if (k === "a") { acctBack = "title"; return openAccount(); }
-    if (k === "t" && T.admin) return toggleTester();
   }
-  if (k === "r" && T.tester && (mode === "game" || mode === "end")) return restartRun();
-  if (restartArmed) { restartArmed = false; }
+  if (k === "r" && T.admin && (mode === "game" || mode === "end")) return restartRun();
   if (mode === "game") {
     if (/^[1-4]$/.test(k)) return take(Number(k) - 1);
     if (k === "b" && run.view.room.some((c) => c.kind === "monster")) { bare = !bare; say(bare ? "Bare hands. Pick a demon." : "Blade back up.", undefined); return draw(); }

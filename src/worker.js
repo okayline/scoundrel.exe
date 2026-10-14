@@ -13,8 +13,7 @@
 //   GET  /api/share?day=            your share card text for a finished run
 //   GET  /api/history               your last 30 runs
 //   GET  /api/ledger?before=&limit=  the ledger, newest first; today's moves by other players are hidden
-//   POST /api/restart               testers only: throw today's run away and deal it again
-//   POST /api/tester {on}           admins only: switch tester on or off for yourself (sealed on the ledger)
+//   POST /api/restart               admins only: throw today's run away and deal it again (admin runs don't count)
 //   GET  /api/account               your name, flags, save codes and passkeys (never the codes themselves)
 //   POST /api/codes {action: "new" | "remove", id}   make a save code (shown once) or forget one
 //   POST /api/load {code}           load the player a save code belongs to on this device
@@ -22,7 +21,7 @@
 
 import * as G from "../engine/scoundrel.js";
 import { dailySeed, utcDay, dayNumber, msUntilNextDay } from "../engine/daily.js";
-import { moveRecord, runRecord, voidRecord, testerRecord, chainInserts, head, ensureDeal, isUnique } from "./ledger.js";
+import { moveRecord, runRecord, chainInserts, head, ensureDeal, isUnique } from "./ledger.js";
 import { MAX_CODES, newSaveCode, hashCode, newSession, rateLimit } from "./saves.js";
 import { registerOptions, verifyRegistration, loginOptions, verifyLogin } from "./passkeys.js";
 
@@ -62,7 +61,6 @@ const ROUTES = {
   "GET /api/history": history,
   "GET /api/ledger": ledger,
   "POST /api/restart": restart,
-  "POST /api/tester": setTester,
   "GET /api/account": account,
   "POST /api/codes": codes,
   "POST /api/load": loadCode,
@@ -107,10 +105,10 @@ async function findPlayer(req, env) {
   const token = readCookie(req);
   if (!token) return null;
   const h = await sha256(token);
-  let p = await env.DB.prepare("SELECT id, name, tester, admin FROM players WHERE token_hash = ?").bind(h).first();
+  let p = await env.DB.prepare("SELECT id, name, admin FROM players WHERE token_hash = ?").bind(h).first();
   if (!p) {
     p = await env.DB.prepare(
-      "SELECT p.id, p.name, p.tester, p.admin FROM sessions s JOIN players p ON p.id = s.player_id WHERE s.token_hash = ?").bind(h).first();
+      "SELECT p.id, p.name, p.admin FROM sessions s JOIN players p ON p.id = s.player_id WHERE s.token_hash = ?").bind(h).first();
     if (p) await env.DB.prepare("UPDATE sessions SET seen_at = ? WHERE token_hash = ?").bind(now(), h).run();
   }
   if (p) await env.DB.prepare("UPDATE players SET seen_at = ? WHERE id = ?").bind(now(), p.id).run();
@@ -123,7 +121,7 @@ async function needPlayer(req, env) {
   if (found) return { player: found };
   const token = newToken();
   const t = now();
-  const r = await env.DB.prepare("INSERT INTO players (token_hash, created_at, seen_at) VALUES (?, ?, ?) RETURNING id, name, tester, admin")
+  const r = await env.DB.prepare("INSERT INTO players (token_hash, created_at, seen_at) VALUES (?, ?, ?) RETURNING id, name, admin")
     .bind(await sha256(token), t, t).first();
   return { player: r, cookie: setCookie(token) };
 }
@@ -169,7 +167,7 @@ function runView(run, game, events) {
 async function today(req, env) {
   const info = dayInfo(env);
   const player = await findPlayer(req, env);
-  const out = { ...info, name: player?.name ?? null, tester: !!player?.tester, admin: !!player?.admin, run: null, unfinished: null };
+  const out = { ...info, name: player?.name ?? null, admin: !!player?.admin, run: null, unfinished: null };
   if (!player) return json(out);
   const run = await env.DB.prepare("SELECT * FROM runs WHERE player_id = ? AND day = ?").bind(player.id, info.day).first();
   if (run) out.run = runView(run, await gameOf(env, run));
@@ -184,14 +182,14 @@ async function start(req, env) {
   const { player, cookie } = await needPlayer(req, env);
   const day = utcDay();
   await ensureDeal(env, day, await dailySeed(env.DAILY_SECRET, day));
-  // a run id is never reused (a tester's thrown-away run keeps its id on the ledger), so the next id
+  // a run id is never reused (an admin's thrown-away run may have been sealed before they were admin), so the next id
   // is one past the highest the runs table or the ledger has ever seen
   await env.DB.prepare(
     `INSERT OR IGNORE INTO runs (id, player_id, day, started_at)
      SELECT COALESCE(MAX(m), 0) + 1, ?, ?, ? FROM (SELECT MAX(id) AS m FROM runs UNION ALL SELECT MAX(run_id) FROM ledger)`)
     .bind(player.id, day, now()).run();
   const run = await env.DB.prepare("SELECT * FROM runs WHERE player_id = ? AND day = ?").bind(player.id, day).first();
-  return json({ ...dayInfo(env, day), name: player.name, tester: !!player.tester, admin: !!player.admin, run: runView(run, await gameOf(env, run)) }, 200, cookie ? { "set-cookie": cookie } : {});
+  return json({ ...dayInfo(env, day), name: player.name, admin: !!player.admin, run: runView(run, await gameOf(env, run)) }, 200, cookie ? { "set-cookie": cookie } : {});
 }
 
 async function move(req, env) {
@@ -228,9 +226,10 @@ async function move(req, env) {
   // and a double-sent move can't be sealed twice (unique run+n). If another entry took the chain
   // head first, the whole thing rolls back and we build on the new head and try again.
   await ensureDeal(env, day, seed);
-  const entries = [{ kind: "move", day, playerId: player.id, runId: run.id, n: game.log.length, t,
+  // admin runs don't count: they're never sealed on the ledger (and never on the leaderboard)
+  const entries = player.admin ? [] : [{ kind: "move", day, playerId: player.id, runId: run.id, n: game.log.length, t,
     record: moveRecord({ day, playerId: player.id, runId: run.id, n: game.log.length, room: before.turn, action, before, after: game, events: result.events, t }) }];
-  if (done) entries.push({ kind: "run", day, playerId: player.id, runId: run.id, t, record: runRecord({ day, playerId: player.id, runId: run.id, state: game, t }) });
+  if (done && !player.admin) entries.push({ kind: "run", day, playerId: player.id, runId: run.id, t, record: runRecord({ day, playerId: player.id, runId: run.id, state: game, t }) });
   const update = env.DB.prepare(
     `UPDATE runs SET actions = ?, moves = ?, status = ?, score = ?, health = ?, marks = ?, finished_at = ?
      WHERE id = ? AND moves = ?`)
@@ -274,11 +273,11 @@ async function leaderboard(req, env, url) {
   const top = await env.DB.prepare(
     `SELECT p.name, r.score, r.status, r.marks, r.finished_at
      FROM runs r JOIN players p ON p.id = r.player_id
-     WHERE r.day = ? AND r.status != 'playing' AND p.name IS NOT NULL AND p.tester = 0
+     WHERE r.day = ? AND r.status != 'playing' AND p.name IS NOT NULL AND p.admin = 0
      ORDER BY r.score DESC, r.finished_at ASC LIMIT 100`).bind(day).all();
   const counts = await env.DB.prepare(
     `SELECT COUNT(*) AS played, SUM(r.status = 'won') AS won, SUM(r.status = 'playing') AS playing
-     FROM runs r JOIN players p ON p.id = r.player_id WHERE r.day = ? AND p.tester = 0`).bind(day).first();
+     FROM runs r JOIN players p ON p.id = r.player_id WHERE r.day = ? AND p.admin = 0`).bind(day).first();
 
   // your own place, named or not
   let you = null;
@@ -287,9 +286,9 @@ async function leaderboard(req, env, url) {
     const mine = await env.DB.prepare("SELECT score, status, finished_at FROM runs WHERE player_id = ? AND day = ?").bind(player.id, day).first();
     if (mine && mine.status !== "playing") {
       const ahead = await env.DB.prepare(
-        `SELECT COUNT(*) AS n FROM runs r JOIN players p ON p.id = r.player_id WHERE r.day = ? AND r.status != 'playing' AND p.tester = 0
+        `SELECT COUNT(*) AS n FROM runs r JOIN players p ON p.id = r.player_id WHERE r.day = ? AND r.status != 'playing' AND p.admin = 0
          AND (r.score > ? OR (r.score = ? AND r.finished_at < ?))`).bind(day, mine.score, mine.score, mine.finished_at).first();
-      you = { rank: ahead.n + 1, score: mine.score, status: mine.status, named: !!player.name, tester: !!player.tester };
+      you = { rank: ahead.n + 1, score: mine.score, status: mine.status, named: !!player.name, admin: !!player.admin };
     }
   }
 
@@ -351,46 +350,13 @@ async function ledger(req, env, url) {
   return json({ today: t, total, entries, more: rows.length === limit && rows[rows.length - 1].id > 1 });
 }
 
-// Testers only: throw today's run away and deal the same deck again. The old run's moves stay on the
-// ledger, and a "void" entry seals that it was thrown away. Testers are left off the leaderboard.
+// Admins only: throw today's run away and deal the same deck again. Admin runs don't count anywhere:
+// not on the ledger, not on the leaderboard.
 async function restart(req, env) {
   const player = await findPlayer(req, env);
-  if (!player || !player.tester) throw new Oops("Only testers can do that.", 403);
-  const day = utcDay();
-  const old = await env.DB.prepare("SELECT * FROM runs WHERE player_id = ? AND day = ?").bind(player.id, day).first();
-  if (old) {
-    const t = now();
-    const entry = { kind: "void", day, playerId: player.id, runId: old.id, t,
-      record: voidRecord({ day, playerId: player.id, runId: old.id, moves: old.moves, status: old.status, t }) };
-    const del = env.DB.prepare("DELETE FROM runs WHERE id = ? AND moves = ?").bind(old.id, old.moves);
-    for (let attempt = 0; ; attempt++) {
-      const ins = await chainInserts(env.DB, await head(env.DB), [entry],
-        { sql: "NOT EXISTS (SELECT 1 FROM runs WHERE id = ?)", args: [old.id] });
-      try { await env.DB.batch([del, ...ins]); break; }
-      catch (e) { if (isUnique(e, "prev_hash") && attempt < 8) continue; throw e; }
-    }
-  }
-  return start(req, env);
-}
-
-// Admins only: switch tester on or off for yourself. Each switch is sealed on the ledger, so practising
-// a deck as a tester and then switching back to post a ranked run can't happen quietly.
-async function setTester(req, env) {
-  const player = await findPlayer(req, env);
   if (!player || !player.admin) throw new Oops("Only admins can do that.", 403);
-  const on = !!(await body(req)).on;
-  if (!!player.tester === on) return json({ tester: on });
-  const t = now();
-  const day = utcDay();
-  const entry = { kind: "tester", day, playerId: player.id, t, record: testerRecord({ day, playerId: player.id, on, t }) };
-  const upd = env.DB.prepare("UPDATE players SET tester = ? WHERE id = ? AND tester = ?").bind(on ? 1 : 0, player.id, on ? 0 : 1);
-  for (let attempt = 0; ; attempt++) {
-    const ins = await chainInserts(env.DB, await head(env.DB), [entry],
-      { sql: "EXISTS (SELECT 1 FROM players WHERE id = ? AND tester = ?)", args: [player.id, on ? 1 : 0] });
-    try { await env.DB.batch([upd, ...ins]); break; }
-    catch (e) { if (isUnique(e, "prev_hash") && attempt < 8) continue; throw e; }
-  }
-  return json({ tester: on });
+  await env.DB.prepare("DELETE FROM runs WHERE player_id = ? AND day = ?").bind(player.id, utcDay()).run();
+  return start(req, env);
 }
 
 // ---------- save codes and passkeys ----------
@@ -401,7 +367,7 @@ async function account(req, env) {
   const codes = (await env.DB.prepare("SELECT id, created_at, last_used_at FROM save_codes WHERE player_id = ? ORDER BY id").bind(player.id).all()).results;
   const keys = (await env.DB.prepare("SELECT id, label, created_at, last_used_at FROM passkeys WHERE player_id = ? ORDER BY id").bind(player.id).all()).results;
   const devices = 1 + (await env.DB.prepare("SELECT COUNT(*) AS n FROM sessions WHERE player_id = ?").bind(player.id).first()).n;
-  return json({ player: true, name: player.name, tester: !!player.tester, admin: !!player.admin, codes, passkeys: keys, devices });
+  return json({ player: true, name: player.name, admin: !!player.admin, codes, passkeys: keys, devices });
 }
 
 async function codes(req, env) {

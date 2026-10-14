@@ -331,66 +331,6 @@ test("ledger: today's moves by others are hidden, yours and run ends are open; p
   assert.ok(later.entries.every((e) => e.record));
 });
 
-test("testers: restart deals the same deck again, voids the old run on the ledger, stay off the board", async () => {
-  const env = makeEnv();
-  const call = browser(env);
-  await call("/api/name", { name: "KURA" });
-  // not a tester yet
-  assert.equal((await call("/api/restart", {})).status, 403);
-  env.DB.raw.prepare("UPDATE players SET tester = 1 WHERE name_key = 'kura'").run();
-  assert.equal((await call("/api/today")).data.tester, true);
-  const first = (await call("/api/start", {})).data.run;
-  const end1 = await playThrough(call, first);
-  const again = (await call("/api/restart", {})).data.run;
-  assert.equal(again.n, 0);
-  assert.equal(again.status, "playing");
-  assert.deepEqual(again.view.room, first.view.room);      // same deck
-  // mid-run restart works too
-  const one = (await call("/api/move", { day: again.day, n: 0, action: again.view.legal.find((q) => q.type === "take") })).data;
-  assert.equal(one.n, 1);
-  const third = (await call("/api/restart", {})).data.run;
-  assert.equal(third.n, 0);
-  await playThrough(call, third);
-
-  const rows = env.DB.raw.prepare("SELECT * FROM ledger ORDER BY id").all();
-  await verify(rows);
-  assert.equal(rows.filter((r) => r.kind === "void").length, 2);
-  // run ids never reused: each run's moves are numbered 1.. under its own id
-  const ids = [...new Set(rows.filter((r) => r.kind === "move").map((r) => r.run_id))];
-  assert.equal(ids.length, 3);
-  assert.equal(env.DB.raw.prepare("SELECT COUNT(*) n FROM runs").get().n, 1);
-
-  // a normal player is on the board, the tester isn't (and isn't counted)
-  const other = browser(env);
-  await other("/api/name", { name: "PIXIE" });
-  await playThrough(other, (await other("/api/start", {})).data.run);
-  const b = (await call("/api/leaderboard")).data;
-  assert.deepEqual(b.top.map((r) => r.name), ["PIXIE"]);
-  assert.equal(b.played, 1);
-  assert.equal(b.you.tester, true);
-  assert.ok(end1.status !== "playing");
-});
-
-test("admins switch tester on and off in the game; each switch is sealed; others can't", async () => {
-  const env = makeEnv();
-  const call = browser(env), other = browser(env);
-  await call("/api/name", { name: "KURA" }); await other("/api/name", { name: "PIXIE" });
-  assert.equal((await call("/api/tester", { on: true })).status, 403);
-  env.DB.raw.prepare("UPDATE players SET admin = 1 WHERE name_key = 'kura'").run();
-  assert.equal((await call("/api/today")).data.admin, true);
-  assert.equal((await call("/api/tester", { on: true })).data.tester, true);
-  assert.equal((await call("/api/today")).data.tester, true);
-  assert.equal((await call("/api/tester", { on: true })).data.tester, true);   // already on: no new entry
-  const r = (await call("/api/restart", {})).status;
-  assert.equal(r, 200);
-  assert.equal((await call("/api/tester", { on: false })).data.tester, false);
-  assert.equal((await call("/api/restart", {})).status, 403);
-  assert.equal((await other("/api/tester", { on: true })).status, 403);
-  const rows = env.DB.raw.prepare("SELECT * FROM ledger ORDER BY id").all();
-  await verify(rows);
-  assert.deepEqual(rows.filter((x) => x.kind === "tester").map((x) => JSON.parse(x.record).on), [true, false]);
-});
-
 // ---------- save codes and passkeys ----------
 
 test("save codes: load your player on another device; codes are hashed, limited and removable", async () => {
@@ -416,7 +356,7 @@ test("save codes: load your player on another device; codes are hashed, limited 
   assert.equal(m.status, 200);
   assert.equal((await home("/api/today")).data.run.n, 2);   // both devices see it
 
-  // flags follow the player
+  // the admin flag follows the player
   env.DB.raw.prepare("UPDATE players SET admin = 1").run();
   assert.equal((await phone("/api/today")).data.admin, true);
 
@@ -515,4 +455,31 @@ test("passkeys: add one on this device, load the player on another, stale or for
   const forged = await fake.get(lo3);
   forged.id = answer.id;
   assert.equal((await browser(env)("/api/passkey", { action: "login", credential: forged })).status, 400);
+});
+
+test("admins: unlimited fresh deals of today's deck; admin runs are never sealed and never ranked", async () => {
+  const env = makeEnv();
+  const call = browser(env), other = browser(env);
+  await call("/api/name", { name: "KURA" }); await other("/api/name", { name: "PIXIE" });
+  assert.equal((await call("/api/restart", {})).status, 403);   // not an admin yet
+  env.DB.raw.prepare("UPDATE players SET admin = 1 WHERE name_key = 'kura'").run();
+  assert.equal((await call("/api/today")).data.admin, true);
+  const first = (await call("/api/start", {})).data.run;
+  await playThrough(call, first);
+  for (let i = 0; i < 3; i++) {
+    const again = (await call("/api/restart", {})).data.run;
+    assert.equal(again.n, 0);
+    assert.deepEqual(again.view.room, first.view.room);   // same deck
+    await call("/api/move", { day: again.day, n: 0, action: again.view.legal.find((q) => q.type === "take") });
+  }
+  assert.equal((await other("/api/restart", {})).status, 403);
+  await playThrough(other, (await other("/api/start", {})).data.run);
+
+  const rows = env.DB.raw.prepare("SELECT * FROM ledger ORDER BY id").all();
+  await verify(rows);
+  assert.equal(rows.filter((r) => r.player_id === 1).length, 0);   // nothing from the admin
+  assert.ok(rows.filter((r) => r.player_id === 2).length > 0);
+  const b = (await call("/api/leaderboard")).data;
+  assert.deepEqual(b.top.map((r) => r.name), ["PIXIE"]);
+  assert.equal(b.played, 1);
 });

@@ -4,6 +4,13 @@ Newest first. Times are Hawaii time (HST).
 
 ---
 
+## v0.6.0 — "Off the Record"
+**Wed Oct 14, 2026 · 4:44 AM HST**
+
+- Admin mode is simpler: admins can restart today's deck any time to try things out, and admin runs don't count. They're never on the Ledger or the leaderboard.
+- Tester mode is gone.
+- The Ledger was reset, fresh for real players.
+
 ## v0.5.0 — "Take It With You"
 **Wed Oct 14, 2026 · 4:33 AM HST**
 
