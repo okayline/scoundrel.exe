@@ -4,6 +4,11 @@ Newest first. Times are Hawaii time (HST).
 
 ---
 
+## v0.7.3 — "Brackets Back"
+**Wed Oct 14, 2026 · 5:42 AM HST**
+
+- The front page menu shows [B]OARD, [L]EDGER, [H]ELP and [P]LAYER again.
+
 ## v0.7.2 — "Who's Playing?"
 **Wed Oct 14, 2026 · 5:38 AM HST**
 

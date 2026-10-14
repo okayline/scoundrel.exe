@@ -5,7 +5,7 @@
 // that draws them wide can never push the line out of place.
 
 const W = 80, IN = W - 4;                     // screen width, and the width inside the frame
-const VERSION = "v0.7.2";
+const VERSION = "v0.7.3";
 const RANK = { 11: "J", 12: "Q", 13: "K", 14: "A" };
 const SUIT = { C: "♣", S: "♠", D: "♦", H: "♥" };
 const KIND = { monster: "DEMON", weapon: "BLADE", potion: "HEALTH" };
@@ -170,7 +170,7 @@ function titleScreen() {
     center(r && r.status !== "playing" ? (r.status === "won" ? "YOU CLEARED TODAY'S DECK." : "TODAY'S DECK GOT YOU.") : "44 CARDS. 20 HP. ONE RUN."),
     "~", "-", ...(guestBox() ? whoRows() : logRows()), "-",
     // not logged in: the box takes the keyboard, so the other pages are click-only here
-    guestBox() ? bar([["[ENTER] PLAY", "enter"], ["[ESC] PLAY AS GUEST", "esc"], ["BOARD", "b"], ["LEDGER", "l"], ["HELP", "h"], ["PLAYER", "a"]])
+    guestBox() ? bar([["[ENTER] PLAY", "enter"], ["[ESC] PLAY AS GUEST", "esc"], ["[B]OARD", "b"], ["[L]EDGER", "l"], ["[H]ELP", "h"], ["[P]LAYER", "a"]])
       : bar([[go, "enter"], ["[B]OARD", "b"], ["[L]EDGER", "l"], ["[H]ELP", "h"], ["[P]LAYER", "a"]]),
     "="];
 }
