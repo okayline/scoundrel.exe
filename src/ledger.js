@@ -5,6 +5,7 @@
 //   kind "move" - one move in a run, with the whole story: the cards, the blade, damage, HP before and after,
 //                 and the next room if one was dealt
 //   kind "run"  - a run ended: cleared or deleted, score, HP, room
+//   kind "void" - a tester threw a run away to play the deck again (its moves stay on the ledger)
 //
 //   record = JSON of the event
 //   hash   = SHA-256( prev_hash + "|" + record )
@@ -58,6 +59,10 @@ export function runRecord({ day, playerId, runId, state, t }) {
     kind: "run", day, player: playerId, run: runId, status: state.status, score: state.score,
     hp: state.health, room: state.turn, moves: state.log.length, demons_left: left.length, t,
   });
+}
+
+export function voidRecord({ day, playerId, runId, moves, status, t }) {
+  return JSON.stringify({ kind: "void", day, player: playerId, run: runId, moves, status, t });
 }
 
 export function dealRecord({ day, seedHash, t }) {

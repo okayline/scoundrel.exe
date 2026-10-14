@@ -1,4 +1,4 @@
-# scoundrel.exe (v0.3.0)
+# scoundrel.exe (v0.4.0)
 
 A daily seeded Scoundrel game: everyone plays the same 44-card deck each UTC day.
 Scoundrel is a solo card game by Zach Gage and Kurt Bieg (2011).
@@ -50,6 +50,17 @@ curl.exe -O https://raw.githubusercontent.com/okayline/scoundrel.exe/main/migrat
 npx wrangler d1 execute scoundrel-db --remote --file=001_ledger.sql
 ```
 
+v0.4 adds testers (unlimited restarts, left off the leaderboard). Run once, then flag a player by name:
+
+```
+curl.exe -O https://raw.githubusercontent.com/okayline/scoundrel.exe/main/migrations/002_tester.sql
+npx wrangler d1 execute scoundrel-db --remote --file=002_tester.sql
+npx wrangler d1 execute scoundrel-db --remote --command "UPDATE players SET tester = 1 WHERE name_key = 'kura'"
+```
+
+Testers get [R]ESTART (press twice): the run is thrown away and the same deck is dealt again. The old
+run's moves stay on the ledger with a "void" entry. `tester = 0` turns it off.
+
 `LAUNCH_DAY` in `wrangler.jsonc` is day #1 for the share cards ("scoundrel.exe #12").
 
 ## How the daily game works
@@ -72,6 +83,7 @@ Changing any old record breaks every hash after it, and `prev_hash` is unique so
 - **move**: every move with the whole story (cards, blade, damage, HP before and after, the next room).
   A move and its entry are saved in one transaction: a move is saved only if it's sealed.
 - **run**: a run ended (cleared or deleted, score, HP, room).
+- **void**: a tester threw a run away to play the deck again.
 
 Records hold player ids, never names. Today's moves by other players are hidden on the ledger
 ("took a card") until the day ends; your own moves, deals and run endings always show in full.
@@ -87,6 +99,7 @@ GET  /api/leaderboard?day=        top 100 (+ your rank); past days include the s
 GET  /api/share?day=              share card text for a finished run
 GET  /api/history                 your last 30 runs
 GET  /api/ledger?before=&limit=   the ledger, newest first (today's moves by others hidden)
+POST /api/restart                 testers only: throw today's run away, deal the same deck again
 ```
 
 ## Try it

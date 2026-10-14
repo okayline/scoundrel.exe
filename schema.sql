@@ -9,7 +9,8 @@ CREATE TABLE IF NOT EXISTS players (
   name        TEXT,
   name_key    TEXT UNIQUE,            -- lowercase name, so names are unique ignoring case
   created_at  INTEGER NOT NULL,       -- unix seconds
-  seen_at     INTEGER NOT NULL
+  seen_at     INTEGER NOT NULL,
+  tester      INTEGER NOT NULL DEFAULT 0   -- 1 = unlimited restarts, left off the leaderboard
 );
 
 -- One ranked run per player per UTC day. The deck is never stored: it comes from the day's seed,

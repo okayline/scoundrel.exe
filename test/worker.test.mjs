@@ -330,3 +330,43 @@ test("ledger: today's moves by others are hidden, yours and run ends are open; p
   const later = (await browser(env)("/api/ledger?limit=100")).data;
   assert.ok(later.entries.every((e) => e.record));
 });
+
+test("testers: restart deals the same deck again, voids the old run on the ledger, stay off the board", async () => {
+  const env = makeEnv();
+  const call = browser(env);
+  await call("/api/name", { name: "KURA" });
+  // not a tester yet
+  assert.equal((await call("/api/restart", {})).status, 403);
+  env.DB.raw.prepare("UPDATE players SET tester = 1 WHERE name_key = 'kura'").run();
+  assert.equal((await call("/api/today")).data.tester, true);
+  const first = (await call("/api/start", {})).data.run;
+  const end1 = await playThrough(call, first);
+  const again = (await call("/api/restart", {})).data.run;
+  assert.equal(again.n, 0);
+  assert.equal(again.status, "playing");
+  assert.deepEqual(again.view.room, first.view.room);      // same deck
+  // mid-run restart works too
+  const one = (await call("/api/move", { day: again.day, n: 0, action: again.view.legal.find((q) => q.type === "take") })).data;
+  assert.equal(one.n, 1);
+  const third = (await call("/api/restart", {})).data.run;
+  assert.equal(third.n, 0);
+  await playThrough(call, third);
+
+  const rows = env.DB.raw.prepare("SELECT * FROM ledger ORDER BY id").all();
+  await verify(rows);
+  assert.equal(rows.filter((r) => r.kind === "void").length, 2);
+  // run ids never reused: each run's moves are numbered 1.. under its own id
+  const ids = [...new Set(rows.filter((r) => r.kind === "move").map((r) => r.run_id))];
+  assert.equal(ids.length, 3);
+  assert.equal(env.DB.raw.prepare("SELECT COUNT(*) n FROM runs").get().n, 1);
+
+  // a normal player is on the board, the tester isn't (and isn't counted)
+  const other = browser(env);
+  await other("/api/name", { name: "PIXIE" });
+  await playThrough(other, (await other("/api/start", {})).data.run);
+  const b = (await call("/api/leaderboard")).data;
+  assert.deepEqual(b.top.map((r) => r.name), ["PIXIE"]);
+  assert.equal(b.played, 1);
+  assert.equal(b.you.tester, true);
+  assert.ok(end1.status !== "playing");
+});

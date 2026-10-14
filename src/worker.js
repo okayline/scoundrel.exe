@@ -13,10 +13,11 @@
 //   GET  /api/share?day=            your share card text for a finished run
 //   GET  /api/history               your last 30 runs
 //   GET  /api/ledger?before=&limit=  the ledger, newest first; today's moves by other players are hidden
+//   POST /api/restart               testers only: throw today's run away and deal it again
 
 import * as G from "../engine/scoundrel.js";
 import { dailySeed, utcDay, dayNumber, msUntilNextDay } from "../engine/daily.js";
-import { moveRecord, runRecord, chainInserts, head, ensureDeal, isUnique } from "./ledger.js";
+import { moveRecord, runRecord, voidRecord, chainInserts, head, ensureDeal, isUnique } from "./ledger.js";
 
 const COOKIE = "sx";
 const COOKIE_MAX_AGE = 400 * 86400;   // the longest browsers allow
@@ -53,6 +54,7 @@ const ROUTES = {
   "GET /api/share": share,
   "GET /api/history": history,
   "GET /api/ledger": ledger,
+  "POST /api/restart": restart,
 };
 
 // ---------- helpers ----------
@@ -90,7 +92,7 @@ const setCookie = (token) => `${COOKIE}=${token}; Path=/; Max-Age=${COOKIE_MAX_A
 async function findPlayer(req, env) {
   const token = readCookie(req);
   if (!token) return null;
-  const p = await env.DB.prepare("SELECT id, name FROM players WHERE token_hash = ?").bind(await sha256(token)).first();
+  const p = await env.DB.prepare("SELECT id, name, tester FROM players WHERE token_hash = ?").bind(await sha256(token)).first();
   if (p) await env.DB.prepare("UPDATE players SET seen_at = ? WHERE id = ?").bind(now(), p.id).run();
   return p;
 }
@@ -101,7 +103,7 @@ async function needPlayer(req, env) {
   if (found) return { player: found };
   const token = newToken();
   const t = now();
-  const r = await env.DB.prepare("INSERT INTO players (token_hash, created_at, seen_at) VALUES (?, ?, ?) RETURNING id, name")
+  const r = await env.DB.prepare("INSERT INTO players (token_hash, created_at, seen_at) VALUES (?, ?, ?) RETURNING id, name, tester")
     .bind(await sha256(token), t, t).first();
   return { player: r, cookie: setCookie(token) };
 }
@@ -147,7 +149,7 @@ function runView(run, game, events) {
 async function today(req, env) {
   const info = dayInfo(env);
   const player = await findPlayer(req, env);
-  const out = { ...info, name: player?.name ?? null, run: null, unfinished: null };
+  const out = { ...info, name: player?.name ?? null, tester: !!player?.tester, run: null, unfinished: null };
   if (!player) return json(out);
   const run = await env.DB.prepare("SELECT * FROM runs WHERE player_id = ? AND day = ?").bind(player.id, info.day).first();
   if (run) out.run = runView(run, await gameOf(env, run));
@@ -162,9 +164,14 @@ async function start(req, env) {
   const { player, cookie } = await needPlayer(req, env);
   const day = utcDay();
   await ensureDeal(env, day, await dailySeed(env.DAILY_SECRET, day));
-  await env.DB.prepare("INSERT OR IGNORE INTO runs (player_id, day, started_at) VALUES (?, ?, ?)").bind(player.id, day, now()).run();
+  // a run id is never reused (a tester's thrown-away run keeps its id on the ledger), so the next id
+  // is one past the highest the runs table or the ledger has ever seen
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO runs (id, player_id, day, started_at)
+     SELECT COALESCE(MAX(m), 0) + 1, ?, ?, ? FROM (SELECT MAX(id) AS m FROM runs UNION ALL SELECT MAX(run_id) FROM ledger)`)
+    .bind(player.id, day, now()).run();
   const run = await env.DB.prepare("SELECT * FROM runs WHERE player_id = ? AND day = ?").bind(player.id, day).first();
-  return json({ ...dayInfo(env, day), name: player.name, run: runView(run, await gameOf(env, run)) }, 200, cookie ? { "set-cookie": cookie } : {});
+  return json({ ...dayInfo(env, day), name: player.name, tester: !!player.tester, run: runView(run, await gameOf(env, run)) }, 200, cookie ? { "set-cookie": cookie } : {});
 }
 
 async function move(req, env) {
@@ -247,10 +254,11 @@ async function leaderboard(req, env, url) {
   const top = await env.DB.prepare(
     `SELECT p.name, r.score, r.status, r.marks, r.finished_at
      FROM runs r JOIN players p ON p.id = r.player_id
-     WHERE r.day = ? AND r.status != 'playing' AND p.name IS NOT NULL
+     WHERE r.day = ? AND r.status != 'playing' AND p.name IS NOT NULL AND p.tester = 0
      ORDER BY r.score DESC, r.finished_at ASC LIMIT 100`).bind(day).all();
   const counts = await env.DB.prepare(
-    `SELECT COUNT(*) AS played, SUM(status = 'won') AS won, SUM(status = 'playing') AS playing FROM runs WHERE day = ?`).bind(day).first();
+    `SELECT COUNT(*) AS played, SUM(r.status = 'won') AS won, SUM(r.status = 'playing') AS playing
+     FROM runs r JOIN players p ON p.id = r.player_id WHERE r.day = ? AND p.tester = 0`).bind(day).first();
 
   // your own place, named or not
   let you = null;
@@ -259,9 +267,9 @@ async function leaderboard(req, env, url) {
     const mine = await env.DB.prepare("SELECT score, status, finished_at FROM runs WHERE player_id = ? AND day = ?").bind(player.id, day).first();
     if (mine && mine.status !== "playing") {
       const ahead = await env.DB.prepare(
-        `SELECT COUNT(*) AS n FROM runs WHERE day = ? AND status != 'playing'
-         AND (score > ? OR (score = ? AND finished_at < ?))`).bind(day, mine.score, mine.score, mine.finished_at).first();
-      you = { rank: ahead.n + 1, score: mine.score, status: mine.status, named: !!player.name };
+        `SELECT COUNT(*) AS n FROM runs r JOIN players p ON p.id = r.player_id WHERE r.day = ? AND r.status != 'playing' AND p.tester = 0
+         AND (r.score > ? OR (r.score = ? AND r.finished_at < ?))`).bind(day, mine.score, mine.score, mine.finished_at).first();
+      you = { rank: ahead.n + 1, score: mine.score, status: mine.status, named: !!player.name, tester: !!player.tester };
     }
   }
 
@@ -315,10 +323,32 @@ async function ledger(req, env, url) {
   const total = (await env.DB.prepare("SELECT COUNT(*) AS n FROM ledger").first()).n;
   const entries = rows.map((r) => {
     const rec = JSON.parse(r.record);
-    const open = r.kind !== "move" || r.day < t || (player && r.player_id === player.id);
+    const open = r.kind !== "move" || r.day < t || (player && r.player_id === player.id);   // deals, run ends and voids are open
     const base = { id: r.id, kind: r.kind, day: r.day, name: r.name ?? null, player: r.player_id, n: r.n, hash: r.hash, prev_hash: r.prev_hash, at: r.created_at };
     if (open) return { ...base, record: r.record };
     return { ...base, hidden: true, room: rec.room, action: rec.action === "skip" ? "skip" : "take" };
   });
   return json({ today: t, total, entries, more: rows.length === limit && rows[rows.length - 1].id > 1 });
+}
+
+// Testers only: throw today's run away and deal the same deck again. The old run's moves stay on the
+// ledger, and a "void" entry seals that it was thrown away. Testers are left off the leaderboard.
+async function restart(req, env) {
+  const player = await findPlayer(req, env);
+  if (!player || !player.tester) throw new Oops("Only testers can do that.", 403);
+  const day = utcDay();
+  const old = await env.DB.prepare("SELECT * FROM runs WHERE player_id = ? AND day = ?").bind(player.id, day).first();
+  if (old) {
+    const t = now();
+    const entry = { kind: "void", day, playerId: player.id, runId: old.id, t,
+      record: voidRecord({ day, playerId: player.id, runId: old.id, moves: old.moves, status: old.status, t }) };
+    const del = env.DB.prepare("DELETE FROM runs WHERE id = ? AND moves = ?").bind(old.id, old.moves);
+    for (let attempt = 0; ; attempt++) {
+      const ins = await chainInserts(env.DB, await head(env.DB), [entry],
+        { sql: "NOT EXISTS (SELECT 1 FROM runs WHERE id = ?)", args: [old.id] });
+      try { await env.DB.batch([del, ...ins]); break; }
+      catch (e) { if (isUnique(e, "prev_hash") && attempt < 8) continue; throw e; }
+    }
+  }
+  return start(req, env);
 }

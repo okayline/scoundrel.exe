@@ -4,6 +4,12 @@ Newest first. Times are Hawaii time (HST).
 
 ---
 
+## v0.4.0 — "Again!"
+**Wed Oct 14, 2026 · 4:25 AM HST**
+
+- **Testers** can restart today's deck as many times as they like (press R twice). Tester runs aren't ranked and stay off the leaderboard.
+- Every restart is written on the Ledger, so nothing disappears quietly.
+
 ## v0.3.0 — "Paper Trail"
 **Wed Oct 14, 2026 · 4:20 AM HST**
 
