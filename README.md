@@ -10,7 +10,57 @@ Workers and in Node, so the server and the screen can never disagree about the r
 engine/scoundrel.js   the rules: deck, shuffle, actions, scoring, replay, share marks
 engine/daily.js       the daily seed (HMAC of the UTC date with a server secret)
 test/                 tests (node --test)
+src/worker.js         the Cloudflare Worker: daily deal, players, moves, leaderboard
+public/index.html     the site (a plain test page for now)
+schema.sql            database tables (D1)
+wrangler.jsonc        Worker config
 play.mjs              play it in a terminal
+```
+
+## Setup (once)
+
+The Worker `scoundrel-exe` is connected to this repo, so every push to `main` deploys it.
+It needs a database and a secret first. From a terminal in this folder, with Node.js installed
+(PowerShell works as-is):
+
+```
+npx wrangler login
+npx wrangler d1 create scoundrel-db
+```
+
+Copy the `database_id` it prints into `wrangler.jsonc` (already done for the live database), then:
+
+```
+npx wrangler d1 execute scoundrel-db --remote --file=schema.sql
+npx wrangler secret put DAILY_SECRET
+```
+
+For `DAILY_SECRET`, paste any long random text (a password manager's 40+ character password is
+perfect). It decides every day's deck. Keep it secret and never change it: a new secret means a
+different deck for today, and past days' decks would no longer match their scores.
+
+`LAUNCH_DAY` in `wrangler.jsonc` is day #1 for the share cards ("scoundrel.exe #12").
+
+## How the daily game works
+
+- Everyone plays the same deck each **UTC** day. The deck comes from `HMAC(DAILY_SECRET, date)`,
+  so nobody can work out tomorrow's.
+- **The server deals.** The browser only sees the current room, health, weapon and counts, never
+  the deck order. Each move is sent to the server, checked by the engine, and saved.
+- **One ranked run a day.** A run started just before midnight can still be finished the next day.
+- **Players are a cookie**, no signup. A name is only needed to show up on the leaderboard.
+- Once a day is over, its seed is public on the leaderboard, so anyone can check the scores.
+
+## API
+
+```
+GET  /api/today                   day number, countdown, your run, your name
+POST /api/start                   start today's run (one per UTC day)
+POST /api/move  {day, n, action}  a move; n = moves made so far (stops double-sends)
+POST /api/name  {name}            pick a name
+GET  /api/leaderboard?day=        top 100 (+ your rank); past days include the seed
+GET  /api/share?day=              share card text for a finished run
+GET  /api/history                 your last 30 runs
 ```
 
 ## Try it
@@ -18,7 +68,7 @@ play.mjs              play it in a terminal
 ```
 node play.mjs            a random deck
 node play.mjs hello      the same deck every time for seed "hello"
-npm test                 run the tests
+npm test                 run the tests (engine + the Worker on a stand-in database)
 ```
 
 In the terminal: `1`–`4` take a card (monsters get your weapon if it can hit them, bare hands if not),

@@ -4,6 +4,16 @@ Newest first. Times are Hawaii time (HST).
 
 ---
 
+## v0.2.0 — "Same Deal"
+**Wed Oct 14, 2026 · 3:46 AM HST**
+
+- **The daily deck is live!** Everyone plays the same deck each day, and a new one deals at midnight UTC.
+- **One try a day.** Your ranked run is your run, so make it count.
+- **No signup.** Just play. Pick a name if you want to show up on the leaderboard.
+- **Leaderboard** for each day, and a **share card** to brag (or cry) with.
+- Once a day is over, its deck's seed goes public so anyone can check the scores.
+- The page is a plain test screen for now. The real look is coming!
+
 ## v0.1.0 — "Shuffle Up"
 **Wed Oct 14, 2026 · 3:37 AM HST**
 

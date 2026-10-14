@@ -1,0 +1,24 @@
+{
+  // The Worker's name must match the one in the Cloudflare dashboard.
+  "name": "scoundrel-exe",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-10-01",
+  // The site's files (index.html etc). /api/* goes to the Worker code first.
+  "assets": {
+    "directory": "public",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "scoundrel-db",
+      "database_id": "75e13945-0776-4fb0-bbaf-8e89119a7d59"
+    }
+  ],
+  "vars": {
+    // Day #1 of the daily deck (UTC). Share cards say "scoundrel.exe #N".
+    "LAUNCH_DAY": "2026-10-14"
+  }
+  // Secret (not in this file): DAILY_SECRET, the key that makes each day's deck.
+  //   npx wrangler secret put DAILY_SECRET
+}
