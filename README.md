@@ -1,4 +1,4 @@
-# scoundrel.exe (v0.6.1)
+# scoundrel.exe (v0.7.0)
 
 A daily seeded Scoundrel game: everyone plays the same 44-card deck each UTC day.
 Scoundrel is a solo card game by Zach Gage and Kurt Bieg (2011).
@@ -92,7 +92,8 @@ npx wrangler d1 execute scoundrel-db --remote --command "DELETE FROM ledger"
   the deck order. Each move is sent to the server, checked by the engine, and saved.
 - **One ranked run a day.** A run started just before midnight can still be finished the next day.
 - **Players are a cookie**, no signup. A name is only needed to show up on the leaderboard.
-- **Save codes and passkeys** (ACCOUNT screen) load the same player on another browser or device.
+- **Save codes and passkeys** (PLAYER screen) log you in as the same player on another browser or device.
+  [L]OG OUT makes this browser a guest again (only once you have a save code or passkey to get back in).
   Only hashes of codes and cookie tokens are stored. Code guesses are limited to 10 per 15 minutes.
   Passkeys belong to the site's address: if the game moves to a new domain, use a save code there.
 - Once a day is over, its seed is public on the leaderboard, so anyone can check the scores.
@@ -127,6 +128,7 @@ POST /api/restart                 admins only: a fresh deal of today's deck (adm
 GET  /api/account                 your name, flags, save codes and passkeys (never the codes)
 POST /api/codes   {action, id}    "new" makes a save code (shown once), "remove" forgets one
 POST /api/load    {code}          load the player a save code belongs to on this browser
+POST /api/logout                  this browser forgets its player (needs a save code or passkey first)
 POST /api/passkey {action, ...}   register_options, register, login_options, login, remove
 ```
 

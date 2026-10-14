@@ -483,3 +483,25 @@ test("admins: unlimited fresh deals of today's deck; admin runs are never sealed
   assert.deepEqual(b.top.map((r) => r.name), ["PIXIE"]);
   assert.equal(b.played, 1);
 });
+
+test("log out: needs a way back in first; then this browser is a guest and can log back in", async () => {
+  const env = makeEnv();
+  const home = browser(env);
+  await home("/api/name", { name: "KURA" });
+  assert.equal((await home("/api/logout", {})).status, 400);         // no save code or passkey yet
+  assert.equal((await home("/api/today")).data.name, "KURA");
+  const { code } = (await home("/api/codes", { action: "new" })).data;
+  // a second device, then log out of the first (original) one
+  const phone = browser(env);
+  await phone("/api/load", { code });
+  const out = await home("/api/logout", {});
+  assert.equal(out.status, 200);
+  assert.match(out.cookie, /Max-Age=0/);
+  assert.equal((await home("/api/today")).data.name, null);         // guest now
+  assert.equal((await phone("/api/today")).data.name, "KURA");      // the other device is still in
+  // log out of the phone too, then back in on the first browser
+  assert.equal((await phone("/api/logout", {})).status, 200);
+  assert.equal((await phone("/api/today")).data.name, null);
+  await home("/api/load", { code });
+  assert.equal((await home("/api/today")).data.name, "KURA");
+});

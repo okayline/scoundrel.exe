@@ -4,6 +4,16 @@ Newest first. Times are Hawaii time (HST).
 
 ---
 
+## v0.7.0 — "Who Goes There?"
+**Wed Oct 14, 2026 · 5:10 AM HST**
+
+- **Who's playing?** The first time you press ENTER, the game asks your name right on the title screen. Or press ESC to play as a guest.
+- The title says who you're playing as, and ENTER says **PLAY**, **CONTINUE** or **YOUR RUN**.
+- **ACCOUNT** is now **PLAYER**, with **[L]OG IN** and **[L]OG OUT**. Log out only works once you have a save code or passkey, so you can always get back in.
+- Passkeys are **[K]EY** on the player screen. Deleting a code or passkey is **[D]ELETE**.
+- Admin players see **ADMIN · DOESN'T COUNT** at the top of every screen.
+- Blades say what they **CAN HIT**: anything, 2 to J, or nothing once they're dull.
+
 ## v0.6.1 — "Stay Put"
 **Wed Oct 14, 2026 · 4:51 AM HST**
 

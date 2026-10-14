@@ -5,7 +5,7 @@
 // that draws them wide can never push the line out of place.
 
 const W = 80, IN = W - 4;                     // screen width, and the width inside the frame
-const VERSION = "v0.6.1";
+const VERSION = "v0.7.0";
 const RANK = { 11: "J", 12: "Q", 13: "K", 14: "A" };
 const SUIT = { C: "♣", S: "♠", D: "♦", H: "♥" };
 const KIND = { monster: "DEMON", weapon: "BLADE", potion: "HEALTH" };
@@ -31,7 +31,8 @@ let ledgerBefore = null; // this page: entries before this id (null = the newest
 let hoverK = null;        // the card (1-4) the mouse is over: it gets a little v above it
 let acct = null;         // /api/account, on the account screen
 let newCode = null;      // a save code just made (shown once)
-let forgetArmed = false; // account screen: F, then a number, forgets that code or passkey
+let logoutArmed = false; // player screen: L twice logs out
+let forgetArmed = false; // account screen: D, then a number, deletes that code or passkey
 
 // ---------- small helpers ----------
 
@@ -73,8 +74,15 @@ function frame(rows) {
     extra -= n;
     return Array(n).fill("");
   });
+  let top = true;
   return rows.map((r) => {
-    if (r === "=") return ["+" + "=".repeat(W - 2) + "+"];
+    if (r === "=" && top && T && T.admin) {   // admin players: a tag in the top border of every screen
+      top = false;
+      const tag = " ADMIN · DOESN'T COUNT ";
+      const l = Math.floor((W - 2 - tag.length) / 2);
+      return [S("+" + "=".repeat(l), "fr"), S(tag, "admintag"), S("=".repeat(W - 2 - l - tag.length) + "+", "fr")];
+    }
+    if (r === "=") { top = false; return ["+" + "=".repeat(W - 2) + "+"]; }
     if (r === "-") return ["+" + "-".repeat(W - 2) + "+"];
     const segs = [].concat(r);
     return [S("| ", "fr"), ...padTo(segs, IN), S(" |", "fr")];
@@ -97,7 +105,7 @@ let drawnMode = null;
 function draw() {
   const keepName = drawnMode === mode ? document.getElementById("nameinput")?.value : null;   // typing survives redraws of the same screen
   drawnMode = mode;
-  const lines = { title: titleScreen, game: gameScreen, end: endScreen, board: boardScreen, ledger: ledgerScreen, help: helpScreen, name: nameScreen,
+  const lines = { title: titleScreen, who: titleScreen, game: gameScreen, end: endScreen, board: boardScreen, ledger: ledgerScreen, help: helpScreen, name: nameScreen,
     account: accountScreen, newcode: newCodeScreen, load: loadScreen, loadcode: loadCodeScreen, loading: loadingScreen }[mode]();
   $screen.innerHTML = html(frame(lines));
   const box = document.getElementById("nameinput");
@@ -105,7 +113,7 @@ function draw() {
 }
 
 function header(left) {
-  return spread(left, mode === "title" ? nowStamp() : `NEXT DEAL ${countdown()}`);
+  return spread(left, mode === "title" || mode === "who" ? nowStamp() : `NEXT DEAL ${countdown()}`);
 }
 
 function logRows() {
@@ -150,20 +158,30 @@ function titleScreen() {
   const r = T.run;
   const played = board && board.day === T.day ? board.played : null;
   const stat = (label, value) => ["                        ", S(dots(label), "dim"), value];
-  let go = "[ENTER] JACK IN";
-  if (r && r.status === "playing" || T.unfinished) go = "[ENTER] JACK BACK IN";
+  let go = "[ENTER] PLAY";
+  if (r && r.status === "playing" || T.unfinished) go = "[ENTER] CONTINUE";
   if (r && r.status !== "playing" && !T.unfinished) go = "[ENTER] YOUR RUN";
   return ["=", header("SCOUNDREL.EXE"), "=", "~",
     ...LOGO.map((l) => center(S(l, "logo"))), "",
     stat("TODAY'S DECK", deckNo(T.number)),
     stat("DEALT TO", played == null ? "..." : `${played} RUNNER${played === 1 ? "" : "S"}`),
     stat("NEXT DEAL IN", countdown()),
-    stat("PLAYING AS", T.name ? T.name + (T.admin ? "  (ADMIN)" : "") : S("no name yet", "dim")),
+    stat("PLAYING AS", T.name ? T.name + (T.admin ? "  (ADMIN)" : "") : S("guest", "dim")),
     "",
     center(r && r.status !== "playing" ? (r.status === "won" ? "YOU CLEARED TODAY'S DECK." : "TODAY'S DECK GOT YOU.") : "44 CARDS. 20 HP. ONE RUN."),
-    "~", "-", ...logRows(), "-",
-    bar([[go, "enter"], ["[B]OARD", "b"], ["[L]EDGER", "l"], ["[H]ELP", "h"], ["[A]CCOUNT", "a"]]),
+    "~", "-", ...(mode === "who" ? whoRows() : logRows()), "-",
+    mode === "who" ? bar([["[ENTER] OK", "enter"], ["[ESC] PLAY AS GUEST", "esc"]])
+      : bar([[go, "enter"], ["[B]OARD", "b"], ["[L]EDGER", "l"], ["[H]ELP", "h"], ["[P]LAYER", "a"]]),
     "="];
+}
+
+// the first time a guest starts a run: ask for a name, right on the title screen
+function whoRows() {
+  return [
+    [S("> ", "dim"), "WHO'S PLAYING?   NAME: ", { input: true, w: 16 }],
+    [S("> ", "dim"), nameErr ? S(nameErr.toUpperCase(), "demon") : S("A name puts you on the leaderboard. Guests' runs count, but don't show.", "dim")],
+    [S("> ", "dim")],
+  ];
 }
 
 function gameScreen() {
@@ -212,7 +230,9 @@ function gameScreen() {
     R.push(["BLADE  ", S(nm(v.weapon.card), "blade")]);
     const kills = v.weapon.kills.slice(-5).map(nm).join(" ");
     R.push(v.weapon.kills.length ? ["  KILLS  ", S(kills, "demon")] : [S("  NO KILLS YET", "dim")]);
-    R.push(v.weaponCeiling ? [`  HITS BELOW ${v.weaponCeiling}`] : [S("  HITS ANYTHING", "dim")]);
+    // a blade only hits demons lower than its last kill: say what that leaves
+    const top = v.weaponCeiling;
+    R.push(!top ? ["  CAN HIT  anything"] : top <= 2 ? ["  CAN HIT  ", S("nothing (dull)", "dim")] : [`  CAN HIT  2 to ${rk(top - 1)}`]);
   } else {
     R.push(["BLADE  ", S("none", "dim")], [S("  BARE HANDS ONLY", "dim")], []);
   }
@@ -274,7 +294,7 @@ function endScreen() {
     "",
     ["                        ", S(marks, "marks")],
     "~", "-", ...logRows(), "-",
-    bar([["[C]OPY SHARE", "c"], ["[B]OARD", "b"], ["[L]EDGER", "l"], ["[A]CCOUNT", "a"], ["[ESC] TITLE", "esc"],
+    bar([["[C]OPY SHARE", "c"], ["[B]OARD", "b"], ["[L]EDGER", "l"], ["[P]LAYER", "a"], ["[ESC] TITLE", "esc"],
       ...(T.admin ? [["[R]ESTART", "r"]] : [])]),
     "="];
 }
@@ -405,7 +425,7 @@ function accountScreen() {
   if (!a) rows.push(S("  Loading...", "dim"));
   else {
     const flags = a.admin ? "ADMIN" : "";
-    rows.push(stat("NAME", a.name ? a.name + (flags ? `  (${flags})` : "") : S("no name yet", "dim")));
+    rows.push(stat("NAME", a.name ? a.name + (flags ? `  (${flags})` : "") : S("guest (no name)", "dim")));
     rows.push(stat("LOADED ON", a.player ? `${a.devices} browser${a.devices === 1 ? "" : "s"} / device${a.devices === 1 ? "" : "s"}` : S("nothing yet", "dim")));
     rows.push("");
     let n = 0;
@@ -418,10 +438,11 @@ function accountScreen() {
     for (const k of a.passkeys) rows.push(`  ${String(++n).padStart(2)}  ${fit(k.label || "passkey", 16)} · made ${md(k.created_at)}${k.last_used_at ? ` · last used ${md(k.last_used_at)}` : ""}`);
   }
   rows.push("~");
-  rows.push(S("  A save code or passkey brings this player to another browser or device:", "dim"));
-  rows.push(S("  on that one, open ACCOUNT and press [L]OAD.", "dim"));
-  return ["=", spread("SCOUNDREL.EXE   ACCOUNT", ""), "=", ...rows, "-", ...logRows(), "-",
-    bar([["[N]AME", "n"], ["[S]AVE CODE", "s"], ["[P]ASSKEY", "p"], ["[L]OAD", "l"], ["[F]ORGET", "f", !(acct && (acct.codes.length || acct.passkeys.length)), forgetArmed], ["[ESC] BACK", "esc"]]),
+  rows.push(S("  A save code or passkey lets you log in as this player on any browser or", "dim"));
+  rows.push(S("  device: on that one, open PLAYER and press [L]OG IN.", "dim"));
+  return ["=", spread("SCOUNDREL.EXE   PLAYER", ""), "=", ...rows, "-", ...logRows(), "-",
+    bar([["[N]AME", "n"], ["[S]AVE CODE", "s"], ["[K]EY", "k"], ["[D]ELETE", "d", !(acct && (acct.codes.length || acct.passkeys.length)), forgetArmed],
+      [loggedIn() ? "[L]OG OUT" : "[L]OG IN", "l", false, logoutArmed], ["[ESC] BACK", "esc"]]),
     "="];
 }
 
@@ -436,22 +457,20 @@ function newCodeScreen() {
 }
 
 function loadScreen() {
-  return ["=", spread("SCOUNDREL.EXE   LOAD A PLAYER", ""), "=", "~",
-    center("LOAD YOUR PLAYER ON THIS BROWSER"), "",
-    center(S("Use a save code or a passkey you made on your other device.", "dim")),
-    center(S("This browser becomes that player. Whoever it was before stays on the", "dim")),
-    center(S("server, but you'd need that player's own code to come back to it.", "dim")),
+  return ["=", spread("SCOUNDREL.EXE   LOG IN", ""), "=", "~",
+    center("LOG IN AS YOUR PLAYER"), "",
+    center(S("Use a save code or a passkey you made before.", "dim")),
     "~", "-", ...logRows(), "-",
     bar([["[C]ODE", "c"], ["[K]EY (PASSKEY)", "k", !pkSupported()], ["[ESC] BACK", "esc"]]), "="];
 }
 
 function loadCodeScreen() {
-  return ["=", spread("SCOUNDREL.EXE   LOAD A PLAYER", ""), "=", "~",
+  return ["=", spread("SCOUNDREL.EXE   LOG IN", ""), "=", "~",
     center("TYPE YOUR SAVE CODE"), "", "",
     [" ".repeat(20), "CODE: ", { input: true, w: 24, max: 29 }], "",
     center(nameErr ? S(nameErr.toUpperCase(), "demon") : S("Dashes and spaces don't matter.", "dim")),
     "~", "-", ...logRows(), "-",
-    bar([["[ENTER] LOAD", "enter"], ["[ESC] BACK", "esc"]]), "="];
+    bar([["[ENTER] LOG IN", "enter"], ["[ESC] BACK", "esc"]]), "="];
 }
 
 async function openAccount() {
@@ -491,7 +510,7 @@ async function addPasskey() {
     await api("/api/passkey", { action: "register", label: deviceName(), credential: {
       id: cred.id, response: { clientDataJSON: toB64(cred.response.clientDataJSON), attestationObject: toB64(cred.response.attestationObject) },
     } });
-    say("Passkey saved.", "On another device, ACCOUNT > [L]OAD > [K]EY.");
+    say("Passkey saved.", "On another device: PLAYER, [L]OG IN, [K]EY.");
     acct = await api("/api/account").catch(() => acct);
   } catch (e) { say(S(pkOops(e).toUpperCase(), "demon")); }
   busy = false; draw();
@@ -524,8 +543,29 @@ async function loadWithCode() {
 async function loaded(name) {
   await loadToday();
   board = null; run = T.unfinished || T.run; mode = "title"; back = "title";
-  say(`Loaded ${name || "your player"} on this browser.`, "Welcome back.");
+  say(`Logged in as ${name || "your player"}.`, "Welcome back.");
   api(`/api/leaderboard?day=${T.day}`).then((b) => { board = b; boardDay = T.day; if (mode === "title") draw(); }).catch(() => {});
+}
+
+// logged in = this browser has a player with a name or a way back in (a guest just has runs)
+const loggedIn = () => !!(acct && acct.player && (acct.name || acct.codes.length || acct.passkeys.length));
+
+async function logOut() {
+  if (busy) return;
+  if (!(acct.codes.length || acct.passkeys.length)) {
+    say(S("MAKE A SAVE CODE OR PASSKEY FIRST.", "demon"), "Otherwise there'd be no way back in.");
+    return draw();
+  }
+  if (!logoutArmed) { logoutArmed = true; say(S("LOG OUT? PRESS L AGAIN.", "demon"), "Log back in any time with your save code or passkey."); return draw(); }
+  logoutArmed = false; busy = true;
+  try {
+    await api("/api/logout", {});
+    await loadToday();
+    board = null; run = T.unfinished || T.run; acct = null; mode = "title"; back = "title";
+    say("Logged out. This browser is a guest now.", "PLAYER, [L]OG IN to come back.");
+    api(`/api/leaderboard?day=${T.day}`).then((b) => { board = b; boardDay = T.day; if (mode === "title") draw(); }).catch(() => {});
+  } catch (e) { say(S(e.message.toUpperCase(), "demon")); }
+  busy = false; draw();
 }
 
 async function forget(i) {
@@ -535,7 +575,7 @@ async function forget(i) {
   if (!item) return draw();
   try {
     await api(`/api/${item[0]}`, { action: "remove", id: item[1] });
-    say(item[0] === "codes" ? "Save code forgotten. It won't load this player anymore." : "Passkey forgotten here.", item[0] === "codes" ? "" : "You can delete it from that device's passwords too.");
+    say(item[0] === "codes" ? "Save code deleted. It won't load this player anymore." : "Passkey deleted here.", item[0] === "codes" ? "" : "You can delete it from that device's passwords too.");
     acct = await api("/api/account");
   } catch (e) { say(S(e.message.toUpperCase(), "demon")); }
   draw();
@@ -615,6 +655,21 @@ async function jackIn() {
   if (busy) return;
   if (run && run.status === "playing") { mode = "game"; say(`Room ${pad2(run.view.turn)}. Picking up where you left off.`, pick(FLAVOR.deal)); draw(); return; }
   if (run) { await showEnd(); return; }
+  if (!T.name) { mode = "who"; nameErr = ""; return draw(); }   // a guest: ask who's playing first
+  return startRun();
+}
+
+// "who's playing?": save the name, then start
+async function whoOk() {
+  const box = document.getElementById("nameinput");
+  const name = (box ? box.value : "").trim();
+  if (!name) { nameErr = ""; mode = "title"; return startRun(); }
+  try { const d = await api("/api/name", { name }); T.name = d.name; nameErr = ""; mode = "title"; return startRun(); }
+  catch (e) { nameErr = e.message; draw(); }
+}
+
+async function startRun() {
+  if (busy) return;
   busy = true;
   try {
     const d = await api("/api/start", {});
@@ -709,6 +764,11 @@ async function key(k) {
     if (k === "esc") { nameErr = ""; mode = back === "account" ? "account" : back; return back === "account" ? openAccountBack() : draw(); }
     return;
   }
+  if (mode === "who") {
+    if (k === "enter") return whoOk();
+    if (k === "esc") { nameErr = ""; mode = "title"; return startRun(); }
+    return;
+  }
   if (mode === "loadcode") {
     if (k === "enter") return loadWithCode();
     if (k === "esc") { nameErr = ""; mode = "load"; return draw(); }
@@ -728,12 +788,13 @@ async function key(k) {
   if (mode === "account") {
     if (forgetArmed && /^[1-9]$/.test(k)) return forget(Number(k));
     forgetArmed = false;
+    if (k !== "l") logoutArmed = false;
     if (k === "esc") { mode = acctBack; return draw(); }
     if (k === "n") { mode = "name"; back = "account"; nameErr = ""; return draw(); }
     if (k === "s") return makeCode();
-    if (k === "p") return addPasskey();
-    if (k === "l") { mode = "load"; return draw(); }
-    if (k === "f" && acct && (acct.codes.length || acct.passkeys.length)) { forgetArmed = true; say(S("PRESS THE NUMBER OF THE CODE OR PASSKEY TO FORGET.", "demon"), "Any other key cancels."); return draw(); }
+    if (k === "k") return addPasskey();
+    if (k === "l") return loggedIn() ? logOut() : (mode = "load", draw());
+    if (k === "d" && acct && (acct.codes.length || acct.passkeys.length)) { forgetArmed = true; say(S("PRESS THE NUMBER OF THE CODE OR PASSKEY TO DELETE.", "demon"), "Any other key cancels."); return draw(); }
     return draw();
   }
   if (mode === "ledger") {
@@ -755,7 +816,7 @@ async function key(k) {
     if (k === "enter") return jackIn();
     if (k === "b") { go("board"); return loadBoard(T.day); }
     if (k === "l") return openLedger();
-    if (k === "a") { acctBack = "title"; return openAccount(); }
+    if (k === "a" || k === "p") { acctBack = "title"; return openAccount(); }
   }
   if (k === "r" && T.admin && (mode === "game" || mode === "end")) return restartRun();
   if (mode === "game") {
@@ -768,7 +829,7 @@ async function key(k) {
     if (k === "c") return copyShare();
     if (k === "b") { go("board"); return loadBoard(run.day); }
     if (k === "l") return openLedger();
-    if (k === "a") { acctBack = "end"; return openAccount(); }
+    if (k === "a" || k === "p") { acctBack = "end"; return openAccount(); }
     if (k === "esc" || k === "enter") { mode = "title"; return draw(); }
   }
 }
@@ -776,7 +837,7 @@ async function key(k) {
 const KEYS = { Enter: "enter", Escape: "esc", ArrowLeft: "left", ArrowRight: "right", "?": "?" };
 document.addEventListener("keydown", (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
-  if ((mode === "name" || mode === "loadcode") && !["Enter", "Escape"].includes(e.key)) return;   // typing in a box
+  if ((mode === "name" || mode === "loadcode" || mode === "who") && !["Enter", "Escape"].includes(e.key)) return;   // typing in a box
   const k = KEYS[e.key] || (e.key.length === 1 ? e.key.toLowerCase() : null);
   if (!k) return;
   e.preventDefault();

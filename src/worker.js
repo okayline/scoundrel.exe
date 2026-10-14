@@ -16,7 +16,8 @@
 //   POST /api/restart               admins only: throw today's run away and deal it again (admin runs don't count)
 //   GET  /api/account               your name, flags, save codes and passkeys (never the codes themselves)
 //   POST /api/codes {action: "new" | "remove", id}   make a save code (shown once) or forget one
-//   POST /api/load {code}           load the player a save code belongs to on this device
+//   POST /api/load {code}           load the player a save code belongs to on this device (log in)
+//   POST /api/logout                this browser forgets its player (needs a save code or passkey first)
 //   POST /api/passkey {action ...}  register_options / register / login_options / login / remove
 
 import * as G from "../engine/scoundrel.js";
@@ -64,6 +65,7 @@ const ROUTES = {
   "GET /api/account": account,
   "POST /api/codes": codes,
   "POST /api/load": loadCode,
+  "POST /api/logout": logout,
   "POST /api/passkey": passkey,
 };
 
@@ -434,4 +436,20 @@ async function passkey(req, env) {
     if (e instanceof Oops) throw e;
     throw new Oops(e.message || "Something went wrong with the passkey.");
   }
+}
+
+// Log out: this browser forgets its player. Only once the player has a save code or passkey, so nobody
+// locks themselves out. A device loaded later just loses its session; the first device's token is
+// replaced with one nobody has, so that old cookie stops working too.
+async function logout(req, env) {
+  const player = await findPlayer(req, env);
+  if (!player) return json({ ok: true }, 200, { "set-cookie": `${COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax` });
+  const ways = (await env.DB.prepare(
+    "SELECT (SELECT COUNT(*) FROM save_codes WHERE player_id = ?) + (SELECT COUNT(*) FROM passkeys WHERE player_id = ?) AS n")
+    .bind(player.id, player.id).first()).n;
+  if (!ways) throw new Oops("Make a save code or passkey first, or you'd have no way back in.");
+  const h = await sha256(readCookie(req));
+  const s = await env.DB.prepare("DELETE FROM sessions WHERE token_hash = ?").bind(h).run();
+  if (!s.meta.changes) await env.DB.prepare("UPDATE players SET token_hash = ? WHERE id = ? AND token_hash = ?").bind(await sha256(newToken()), player.id, h).run();
+  return json({ ok: true }, 200, { "set-cookie": `${COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax` });
 }
