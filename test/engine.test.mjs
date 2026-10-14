@@ -194,3 +194,21 @@ test("daily seeds: same day same seed, secret required, UTC days", async () => {
   assert.equal(dayNumber("2026-10-20", "2026-10-14"), 7);
   assert.equal(msUntilNextDay(new Date("2026-10-14T23:59:00Z")), 60000);
 });
+
+test("slots: cards keep their place on the table; new cards fill the gaps left to right", () => {
+  let s = rigged(["2S", "3S", "4S", "5S", "6S", "7S", "8S", "9S", "TS", "JS", "QS", "KS"]);
+  s = { ...s, slots: s.room.map(G.cardCode) };
+  const at = (st) => G.publicView(st).slots.map((k) => (k == null ? null : G.cardCode(st.room[k])));
+  assert.deepEqual(at(s), ["2S", "3S", "4S", "5S"]);
+  s = take(s, "3S", true).state;
+  assert.deepEqual(at(s), ["2S", null, "4S", "5S"]);
+  s = take(s, "5S", true).state;
+  assert.deepEqual(at(s), ["2S", null, "4S", null]);
+  s = take(s, "2S", true).state;            // 3 taken: 4S stays in slot 3, new cards fill 1, 2, 4
+  assert.deepEqual(at(s), ["6S", "7S", "4S", "8S"]);
+  // a fresh game starts with all four slots filled in deal order, and skipping refills all four
+  const g = G.newGame("slots");
+  assert.deepEqual(G.publicView(g).slots, [0, 1, 2, 3]);
+  const k = G.apply(g, { type: "skip" }).state;
+  assert.deepEqual(G.publicView(k).slots, [0, 1, 2, 3]);
+});

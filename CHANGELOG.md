@@ -4,6 +4,11 @@ Newest first. Times are Hawaii time (HST).
 
 ---
 
+## v0.6.1 — "Stay Put"
+**Wed Oct 14, 2026 · 4:51 AM HST**
+
+- Cards stay in their spot! When you take a card, the others don't slide over. They keep their place and their number, and new cards fill the empty spots.
+
 ## v0.6.0 — "Off the Record"
 **Wed Oct 14, 2026 · 4:44 AM HST**
 

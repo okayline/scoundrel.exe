@@ -5,7 +5,7 @@
 // that draws them wide can never push the line out of place.
 
 const W = 80, IN = W - 4;                     // screen width, and the width inside the frame
-const VERSION = "v0.6.0";
+const VERSION = "v0.6.1";
 const RANK = { 11: "J", 12: "Q", 13: "K", 14: "A" };
 const SUIT = { C: "♣", S: "♠", D: "♦", H: "♥" };
 const KIND = { monster: "DEMON", weapon: "BLADE", potion: "HEALTH" };
@@ -173,23 +173,28 @@ function gameScreen() {
   const L = [];
   L.push(spread(`ROOM ${pad2(v.turn)}`, `DECK ${String(v.deckCount).padStart(2)}  (${v.deckMonsters} DEMONS)`, 47));
   L.push([], [], []);
+  // the 4 slots on the table: a card keeps its slot (and its number) until it's taken
+  const slots = v.slots || room.map((_, i) => i);
+  const at = (k) => (slots[k] == null ? null : room[slots[k]]);
+  const blank = "         ";
   // the little v over the card the mouse is on
   const pickRow = [];
-  room.forEach((c, i) => { if (i) pickRow.push("  "); pickRow.push(S(hoverK === String(i + 1) ? "    v    " : "         ", "")); });
+  for (let k = 0; k < 4; k++) { if (k) pickRow.push("  "); pickRow.push(at(k) && hoverK === String(k + 1) ? "    v    " : blank); }
   L.push(pickRow);
-  const cards = room.map((c, i) => cardRows(c, String(i + 1)));
+  const cards = [0, 1, 2, 3].map((k) => (at(k) ? cardRows(at(k), String(k + 1)) : null));
   for (let row = 0; row < 5; row++) {
     const segs = [];
-    room.forEach((c, i) => { if (i) segs.push("  "); segs.push(...cards[i][row]); });
+    for (let k = 0; k < 4; k++) { if (k) segs.push("  "); if (cards[k]) segs.push(...cards[k][row]); else segs.push(blank); }
     L.push(segs);
   }
   // labels and what each card would do
   const lab = [], hint = [];
-  room.forEach((c, i) => {
-    if (i) { lab.push("  "); hint.push("  "); }
-    lab.push(S(`[${i + 1}]${KIND[c.kind]}`.padEnd(9), KIND_CLASS[c.kind], String(i + 1)));
-    hint.push(S(preview(v, c).padEnd(9), "dim"));
-  });
+  for (let k = 0; k < 4; k++) {
+    if (k) { lab.push("  "); hint.push("  "); }
+    const c = at(k);
+    lab.push(c ? S(`[${k + 1}]${KIND[c.kind]}`.padEnd(9), KIND_CLASS[c.kind], String(k + 1)) : blank);
+    hint.push(c ? S(preview(v, c).padEnd(9), "dim") : blank);
+  }
   L.push(lab, hint, [], [], []);
   // how far through the dungeon, and what's still in the deck
   const seen = 44 - v.deckCount - room.length;
@@ -219,7 +224,7 @@ function gameScreen() {
   for (let i = 0; i < 17; i++) rows.push([...padTo(L[i] || [], 47), S(" | ", "fr"), ...(R[i] || [])]);
   const n = room.length;
   return ["=", header(`SCOUNDREL.EXE   DECK ${deckNo(dayNo(run.day))}`), "=", ...rows, "-", ...logRows(), "-",
-    bar([[`[1-${n}] TAKE`, null], ["[B]ARE HANDS", "b", !room.some((c) => c.kind === "monster"), bare], ["[S]KIP ROOM", "s", !v.canSkip], ["[?] HELP", "h"],
+    bar([["[1-4] TAKE", null], ["[B]ARE HANDS", "b", !room.some((c) => c.kind === "monster"), bare], ["[S]KIP ROOM", "s", !v.canSkip], ["[?] HELP", "h"],
       ...(T.admin ? [["[R]ESTART", "r"]] : [])]),
     "="];
 }
@@ -621,9 +626,12 @@ async function jackIn() {
   draw();
 }
 
-async function take(i) {
+// k = the slot on the table (0-3), not the card's place in the room list
+async function take(k) {
   if (busy || mode !== "game") return;
-  const c = run.view.room[i];
+  const v = run.view;
+  const i = v.slots ? v.slots[k] : k;
+  const c = i == null ? null : v.room[i];
   if (!c) return;
   const action = { type: "take", card: i };
   if (c.kind === "monster" && (bare || !canHit(run.view, c))) action.bare = true;

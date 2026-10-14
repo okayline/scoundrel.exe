@@ -1,4 +1,4 @@
-# scoundrel.exe (v0.6.0)
+# scoundrel.exe (v0.6.1)
 
 A daily seeded Scoundrel game: everyone plays the same 44-card deck each UTC day.
 Scoundrel is a solo card game by Zach Gage and Kurt Bieg (2011).

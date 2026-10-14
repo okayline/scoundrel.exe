@@ -128,11 +128,16 @@ export function newGame(seed, rules = {}) {
 }
 
 // Fill the room back up to 4 (or as many as are left) and start a new turn.
+// Each card on the table sits in one of 4 slots and keeps it until taken; new cards fill the empty
+// slots left to right. (Only for showing the room: actions still point at room[] by index.)
 function deal(s) {
   const need = ROOM_SIZE - s.room.length;
   const drawn = s.deck.slice(0, need);
+  const slots = [...(s.slots || Array(ROOM_SIZE).fill(null))];
+  for (const c of drawn) slots[slots.indexOf(null)] = cardCode(c);
   return {
     ...s,
+    slots,
     room: [...s.room, ...drawn],
     deck: s.deck.slice(drawn.length),
     turn: s.turn + 1,
@@ -191,7 +196,7 @@ export function apply(s, action) {
         : s.takenThisRoom ? "You've already started this room." : "You can't skip this room.");
     }
     events.push({ type: "skip", cards: s.room });
-    n = { ...n, deck: [...s.deck, ...s.room], room: [], skippedLastRoom: true };
+    n = { ...n, deck: [...s.deck, ...s.room], room: [], slots: Array(ROOM_SIZE).fill(null), skippedLastRoom: true };
     n = deal(n);
     events.push({ type: "deal", cards: n.room, turn: n.turn });
     return { state: n, events };
@@ -202,6 +207,7 @@ export function apply(s, action) {
   if (!Number.isInteger(i) || i < 0 || i >= s.room.length) throw new IllegalMove("No such card in this room.");
   const c = s.room[i];
   n.room = s.room.filter((_, k) => k !== i);
+  n.slots = s.slots.map((x) => (x === cardCode(c) ? null : x));
   n.takenThisRoom = s.takenThisRoom + 1;
   n.lastTaken = c;
 
@@ -282,6 +288,8 @@ export function publicView(s) {
     deckMonsters,
     discardCount: s.discard.length,
     turn: s.turn,
+    // where each room card sits on the table: slots[0..3] = an index into room, or null for an empty slot
+    slots: s.slots.map((code) => (code ? s.room.findIndex((c) => cardCode(c) === code) : null)),
     canSkip: canSkip(s),
     skippedLastRoom: s.skippedLastRoom,
     takenThisRoom: s.takenThisRoom,
