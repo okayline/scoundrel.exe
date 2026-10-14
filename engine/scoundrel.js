@@ -16,7 +16,7 @@
 //                                            or fight a monster with your weapon (if it's allowed)
 //   { type: "take", card: i, bare: true }    fight monster i bare-handed (full damage, weapon untouched)
 
-export const VERSION = "0.1.0";
+export const VERSION = "0.3.0";
 export const MAX_HEALTH = 20;
 export const ROOM_SIZE = 4;
 
@@ -232,7 +232,7 @@ export function apply(s, action) {
     n.health = s.health - damage;
     if (armed) n.weapon = { card: s.weapon.card, kills: [...s.weapon.kills, c] };
     else n.discard = [...s.discard, c];
-    events.push({ type: "fight", card: c, armed, damage, health: n.health });
+    events.push({ type: "fight", card: c, armed, weapon: armed ? s.weapon.card : null, damage, health: n.health });
   }
 
   // death
@@ -283,6 +283,11 @@ export function publicView(s) {
     discardCount: s.discard.length,
     turn: s.turn,
     canSkip: canSkip(s),
+    skippedLastRoom: s.skippedLastRoom,
+    takenThisRoom: s.takenThisRoom,
+    last: s.lastTaken,
+    deckWeapons: s.deck.filter((c) => c.kind === "weapon").length,
+    deckPotions: s.deck.filter((c) => c.kind === "potion").length,
     potionUsedThisRoom: s.potionUsedThisRoom,
     legal: legalActions(s),
     status: s.status,
@@ -291,7 +296,8 @@ export function publicView(s) {
 }
 
 // A spoiler-free summary for the share card: one mark per room.
-//   ↷ skipped   ⚔ used the weapon   ✊ fought bare-handed   ♥ healed   · nothing to fight
+//   ↷ skipped   ⚔ used the weapon   ‼ fought bare-handed   ♥ healed   · nothing to fight
+// (all single-column text characters, so they line up in a monospace grid; no emoji)
 export function shareMarks(seed, actions, rules = {}) {
   let s = newGame(seed, rules);
   const rooms = [];
@@ -300,12 +306,12 @@ export function shareMarks(seed, actions, rules = {}) {
     const { state, events } = apply(s, a);
     for (const e of events) {
       if (e.type === "skip") cur += "↷";
-      else if (e.type === "fight") cur += e.armed ? "⚔" : "✊";
+      else if (e.type === "fight") cur += e.armed ? "⚔" : "‼";
       else if (e.type === "heal") cur += "♥";
       else if (e.type === "deal" || e.type === "won" || e.type === "dead") { if (cur) rooms.push(cur); cur = ""; }
     }
     s = state;
   }
   if (cur) rooms.push(cur);
-  return rooms.map((r) => (r.includes("↷") ? "↷" : r.includes("✊") ? "✊" : r.includes("⚔") ? "⚔" : r.includes("♥") ? "♥" : "·"));
+  return rooms.map((r) => (r.includes("↷") ? "↷" : r.includes("‼") ? "‼" : r.includes("⚔") ? "⚔" : r.includes("♥") ? "♥" : "·"));
 }

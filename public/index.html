@@ -4,106 +4,66 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>scoundrel.exe</title>
+<meta name="description" content="A daily Scoundrel deck. Everyone gets the same 44 cards. One run.">
 <style>
-  /* Placeholder test page: just enough to play through the API. The real screen comes later. */
-  body { background: #000; color: #b8f5b8; font: 15px/1.5 ui-monospace, Menlo, Consolas, monospace; max-width: 760px; margin: 0 auto; padding: 16px; }
-  h1 { font-size: 18px; margin: 0 0 4px; }
-  button { font: inherit; background: #111; color: inherit; border: 1px solid #3a6; padding: 4px 10px; margin: 2px; cursor: pointer; }
-  button:disabled { opacity: .35; cursor: default; }
-  .card { display: inline-block; border: 1px solid #3a6; padding: 6px 8px; margin: 4px; min-width: 112px; vertical-align: top; }
-  .monster { color: #ff8080; border-color: #a44; } .weapon { color: #8fd0ff; border-color: #48a; } .potion { color: #ffb0e0; border-color: #a48; }
-  pre { white-space: pre-wrap; } .dim { opacity: .6; } .err { color: #ff6b6b; }
-  table { border-collapse: collapse; } td { padding: 1px 10px 1px 0; }
+  /* VT323, self-hosted (fonts/OFL.txt has its license). The look follows Daily Digital Demon Dungeon. */
+  @font-face { font-family: "VT323"; src: url("fonts/VT323-Regular.ttf") format("truetype"); font-weight: 400; font-style: normal; font-display: swap; }
+  :root {
+    --bg: #07090a;
+    --fg: #e4e4df;
+    --dim: #4f5d52;
+    --trail: #8f8f8a;
+    --bright: #ffffff;
+    --demon: #e0564a;
+    --gold: #e3b341;
+    --moon: #9fc4ff;
+  }
+  html, body { margin: 0; background: var(--bg); color: var(--fg); }
+  body { -webkit-user-select: none; user-select: none; }
+  body {
+    min-height: 100vh; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; padding: 16px; box-sizing: border-box;
+    font-family: "VT323", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    font-variant-ligatures: none;      /* VT323 joins fl, fi and ff into one cell, which would pull a border a column left */
+  }
+  .frame { max-width: 100%; overflow-x: auto; }
+  pre {
+    margin: 0; font-family: inherit; line-height: 1.05;
+    font-size: clamp(6px, calc((100vw - 32px) / 49), 22px); white-space: pre;
+  }
+  /* symbols: always exactly one column, whatever font ends up drawing them */
+  .g { display: inline-block; width: 1ch; text-align: center; overflow: visible; line-height: 0;
+       font-family: "VT323", "DejaVu Sans Mono", Menlo, Consolas, "Segoe UI Symbol", monospace; }
+  .fr { color: var(--trail); }
+  .dim { color: var(--dim); }
+  .dimmer { color: var(--trail); }
+  .flavor { color: var(--trail); }
+  .logo { color: var(--bright); }
+  /* black and white, like DDDD: the only color is the suit in the middle of a card */
+  .demon, .blade, .ichor, .gold, .hp { color: var(--fg); }
+  .you { color: var(--bright); }
+  .card, .btn.card { color: var(--fg); }   /* cards are plain; only their middle suit has color */
+  .card.s-heart { color: var(--demon); }   /* the suit in the middle of a card: hearts red, diamonds blue */
+  .card.s-diamond { color: var(--moon); }
+  .marks { color: var(--fg); letter-spacing: 0; }
+  .btn { cursor: pointer; color: var(--bright); }
+  .clk { cursor: pointer; }   /* cards: clickable, no highlight (the v above shows which one) */
+  .btn:hover { background: var(--fg); color: var(--bg); }
+  .btn.off { color: var(--dim); cursor: default; }
+  .btn.off:hover { background: none; color: var(--dim); }
+  .btn.armed { background: var(--bright); color: var(--bg); }
+  .nameinput { background: var(--bg); color: var(--fg); border: none; outline: 1px solid var(--trail); font: inherit; padding: 0; margin: 0;
+               box-sizing: border-box; text-transform: uppercase; vertical-align: top; height: 1.05em; user-select: text; }
+  .nameinput.bad { outline-color: var(--bright); outline-width: 2px; }
+  .ver { align-self: flex-end; font-size: 12px; color: var(--trail); padding: 2px 1ch 0 0; letter-spacing: 0.05em; }
+  .wrap { display: flex; flex-direction: column; }
 </style>
 </head>
 <body>
-<h1>scoundrel.exe <span class="dim">· test page</span></h1>
-<div id="top" class="dim"></div>
-<div id="game"></div>
-<p id="err" class="err"></p>
-<pre id="log"></pre>
-<h2 style="font-size:15px">» Leaderboard</h2>
-<div id="board"></div>
-<p class="dim">Your name (for the leaderboard): <input id="name" maxlength="16"> <button id="setname">Save</button></p>
-
-<script type="module">
-const $ = (id) => document.getElementById(id);
-const RANK = { 11: "J", 12: "Q", 13: "K", 14: "A" }, SUIT = { C: "♣", S: "♠", D: "♦", H: "♥" };
-const nm = (c) => `${RANK[c.rank] || c.rank}${SUIT[c.suit]}`;
-let T = null, run = null;
-
-async function api(path, opts = {}) {
-  const r = await fetch(path, { method: opts.body ? "POST" : opts.method || "GET", headers: { "content-type": "application/json" }, body: opts.body ? JSON.stringify(opts.body) : undefined });
-  const d = await r.json();
-  if (!r.ok) throw new Error(d.error || r.status);
-  return d;
-}
-const log = (t) => { $("log").textContent = t + "\n" + $("log").textContent; };
-
-function say(events = []) {
-  for (const e of events) {
-    if (e.type === "equip") log(`Equipped ${nm(e.card)}.`);
-    if (e.type === "heal") log(`Healed ${e.amount}. HP ${e.health}.`);
-    if (e.type === "potion_wasted") log(`${nm(e.card)} wasted: one potion per room.`);
-    if (e.type === "fight") log(`${e.armed ? "Weapon" : "Bare hands"} vs ${nm(e.card)}: ${e.damage} damage. HP ${e.health}.`);
-    if (e.type === "skip") log("Skipped the room.");
-    if (e.type === "won") log(`CLEARED! Score ${e.score}${e.bonus ? ` (+${e.bonus} potion bonus)` : ""}`);
-    if (e.type === "dead") log(`YOU DIED. Score ${e.score}.`);
-  }
-}
-
-function draw() {
-  const g = $("game");
-  const h = Math.floor(T.nextIn / 3600000), m = Math.floor(T.nextIn / 60000) % 60;
-  $("top").textContent = `Day #${T.number} (${T.day} UTC) · next deck in ${h}h ${m}m${T.name ? ` · you are ${T.name}` : ""}`;
-  if (!run) { g.replaceChildren(btn("Start today's run (one try!)", start)); return; }
-  const v = run.view;
-  const parts = [];
-  parts.push(el("p", `HP ${v.health}/20 · deck ${v.deckCount} (${v.deckMonsters} monsters) · room ${v.turn}`));
-  parts.push(el("p", `Weapon: ${v.weapon ? nm(v.weapon.card) + (v.weaponCeiling ? ` (only below ${v.weaponCeiling})` : " (fresh)") : "none"}${v.potionUsedThisRoom ? " · potion used this room" : ""}`));
-  if (run.status === "playing") {
-    const row = document.createElement("div");
-    v.room.forEach((c, i) => {
-      const box = document.createElement("div");
-      box.className = "card " + c.kind;
-      box.append(el("div", `${nm(c)} ${c.kind}`));
-      const legal = v.legal.filter((a) => a.card === i);
-      for (const a of legal) box.append(btn(c.kind === "weapon" ? "equip" : c.kind === "potion" ? "drink" : a.bare ? "bare hands" : "weapon", () => act(a)));
-      row.append(box);
-    });
-    parts.push(row);
-    parts.push(btn("Skip room", () => act({ type: "skip" }), !v.canSkip));
-  } else {
-    parts.push(el("p", `${run.status === "won" ? "Cleared!" : "Dead."} Score ${run.score}. Come back tomorrow for a new deck.`));
-    parts.push(btn("Copy share text", copyShare));
-  }
-  g.replaceChildren(...parts);
-}
-const el = (tag, text) => { const e = document.createElement(tag); e.textContent = text; return e; };
-const btn = (text, fn, off) => { const b = document.createElement("button"); b.textContent = text; b.onclick = fn; b.disabled = !!off; return b; };
-
-async function start() { try { const d = await api("/api/start", { body: {} }); T = d; run = d.run; draw(); } catch (e) { $("err").textContent = e.message; } }
-async function act(action) {
-  $("err").textContent = "";
-  try { const r = await api("/api/move", { body: { day: run.day, n: run.n, action } }); run = r; say(r.events); draw(); if (r.status !== "playing") board(); }
-  catch (e) { $("err").textContent = e.message; }
-}
-async function copyShare() {
-  const s = await api(`/api/share?day=${run.day}`);
-  await navigator.clipboard.writeText(s.text).catch(() => {});
-  log(s.text);
-}
-async function board() {
-  const b = await api("/api/leaderboard");
-  const t = document.createElement("table");
-  for (const r of b.top) { const tr = t.insertRow(); [r.rank, r.name, r.score, r.marks || ""].forEach((x) => (tr.insertCell().textContent = x)); }
-  $("board").replaceChildren(el("p", `${b.played} played · ${b.won} cleared${b.you ? ` · you're #${b.you.rank}${b.you.named ? "" : " (pick a name to show up!)"}` : ""}`), t);
-}
-$("setname").onclick = async () => { try { const d = await api("/api/name", { body: { name: $("name").value } }); T.name = d.name; draw(); board(); } catch (e) { $("err").textContent = e.message; } };
-
-T = await api("/api/today");
-run = T.unfinished || T.run;
-draw(); board();
-</script>
+  <div class="wrap">
+    <div class="frame"><pre id="screen" aria-live="polite">LOADING...</pre></div>
+    <div id="ver" class="ver"></div>
+  </div>
+  <script src="app.js?v=0.3.0" defer></script>
 </body>
 </html>

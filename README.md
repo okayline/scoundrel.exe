@@ -1,4 +1,4 @@
-# scoundrel.exe (v0.1.0)
+# scoundrel.exe (v0.3.0)
 
 A daily seeded Scoundrel game: everyone plays the same 44-card deck each UTC day.
 Scoundrel is a solo card game by Zach Gage and Kurt Bieg (2011).
@@ -10,8 +10,10 @@ Workers and in Node, so the server and the screen can never disagree about the r
 engine/scoundrel.js   the rules: deck, shuffle, actions, scoring, replay, share marks
 engine/daily.js       the daily seed (HMAC of the UTC date with a server secret)
 test/                 tests (node --test)
-src/worker.js         the Cloudflare Worker: daily deal, players, moves, leaderboard
-public/index.html     the site (a plain test page for now)
+src/worker.js         the Cloudflare Worker: daily deal, players, moves, leaderboard, ledger
+src/ledger.js         the ledger: one hash chain over every deal, move and finished run
+public/index.html     the site: an 80-column text screen (app.js draws it), VT323 font (fonts/OFL.txt)
+migrations/           database changes for an existing database
 schema.sql            database tables (D1)
 wrangler.jsonc        Worker config
 play.mjs              play it in a terminal
@@ -39,6 +41,15 @@ For `DAILY_SECRET`, paste any long random text (a password manager's 40+ charact
 perfect). It decides every day's deck. Keep it secret and never change it: a new secret means a
 different deck for today, and past days' decks would no longer match their scores.
 
+### Updating an existing database
+
+v0.3 adds the ledger. Run once, right after pushing v0.3 (starting a run errors until it's done):
+
+```
+curl.exe -O https://raw.githubusercontent.com/okayline/scoundrel.exe/main/migrations/001_ledger.sql
+npx wrangler d1 execute scoundrel-db --remote --file=001_ledger.sql
+```
+
 `LAUNCH_DAY` in `wrangler.jsonc` is day #1 for the share cards ("scoundrel.exe #12").
 
 ## How the daily game works
@@ -51,6 +62,20 @@ different deck for today, and past days' decks would no longer match their score
 - **Players are a cookie**, no signup. A name is only needed to show up on the leaderboard.
 - Once a day is over, its seed is public on the leaderboard, so anyone can check the scores.
 
+## The ledger
+
+One SHA-256 hash chain over everything: `hash = SHA-256(prev_hash + "|" + record)`, starting from 64 zeros.
+Changing any old record breaks every hash after it, and `prev_hash` is unique so the chain can't fork.
+
+- **deal**: the first start of each day seals the hash of that day's seed. When the seed goes public
+  after the day, anyone can check the deck was never changed.
+- **move**: every move with the whole story (cards, blade, damage, HP before and after, the next room).
+  A move and its entry are saved in one transaction: a move is saved only if it's sealed.
+- **run**: a run ended (cleared or deleted, score, HP, room).
+
+Records hold player ids, never names. Today's moves by other players are hidden on the ledger
+("took a card") until the day ends; your own moves, deals and run endings always show in full.
+
 ## API
 
 ```
@@ -61,6 +86,7 @@ POST /api/name  {name}            pick a name
 GET  /api/leaderboard?day=        top 100 (+ your rank); past days include the seed
 GET  /api/share?day=              share card text for a finished run
 GET  /api/history                 your last 30 runs
+GET  /api/ledger?before=&limit=   the ledger, newest first (today's moves by others hidden)
 ```
 
 ## Try it
@@ -105,7 +131,7 @@ const { state, events } = G.apply(s, { type: "take", card: 2 });   // throws G.I
 G.publicView(state);              // what the browser may see: never the deck order
 G.legalActions(state);            // every allowed action right now
 G.replay(seed, state.log);        // rebuild the exact game from its actions
-G.shareMarks(seed, state.log);    // one mark per room for the share card: ↷ ⚔ ✊ ♥ ·
+G.shareMarks(seed, state.log);    // one mark per room for the share card: ↷ ⚔ ‼ ♥ ·
 ```
 
 State is plain JSON and never mutated, so it's safe to store in D1 or send over the wire.

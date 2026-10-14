@@ -4,6 +4,19 @@ Newest first. Times are Hawaii time (HST).
 
 ---
 
+## v0.3.0 — "Paper Trail"
+**Wed Oct 14, 2026 · 4:20 AM HST**
+
+- **The real screen is here!** An 80-column text screen in black and white. The only color is the suit in the middle of a card: red hearts, blue diamonds.
+- Click a card (a little **v** shows which one) or press 1–4. Under each card you can see what taking it would do.
+- **[B]ARE HANDS** lets you fight a demon without dulling your blade.
+- Potions are called **HEALTH** now.
+- The side panel shows your HP, your blade and its kills, and whether you can still heal or skip this room.
+- See how far through the dungeon you are, and what's left in the deck.
+- New route marks: ⚔ blade, ‼ bare hands, ↷ skip, ♥ health. No emoji.
+- **The Ledger!** Every deal, move and finished run is sealed in one chain that can't be changed. Other players' moves stay hidden until the day is over, then everything shows.
+- Leaderboard screen with past days, how to play, and a name box right in the game.
+
 ## v0.2.0 — "Same Deal"
 **Wed Oct 14, 2026 · 3:46 AM HST**
 

@@ -6,18 +6,28 @@ import { DatabaseSync } from "node:sqlite";
 import worker from "../src/worker.js";
 import * as G from "../engine/scoundrel.js";
 import { dailySeed, utcDay } from "../engine/daily.js";
+import { sha256, GENESIS } from "../src/ledger.js";
 
-// a tiny D1 lookalike: prepare().bind().first()/all()/run()
-function fakeD1() {
+// a tiny D1 lookalike: prepare().bind().first()/all()/run(), and batch() as one transaction
+export function fakeD1() {
   const db = new DatabaseSync(":memory:");
   db.exec(readFileSync(new URL("../schema.sql", import.meta.url), "utf8"));
   const prep = (sql, args = []) => ({
+    sql, args,
     bind: (...a) => prep(sql, a),
     first: async () => db.prepare(sql).get(...args) ?? null,
     all: async () => ({ results: db.prepare(sql).all(...args) }),
     run: async () => { const r = db.prepare(sql).run(...args); return { meta: { changes: r.changes } }; },
   });
-  return { prepare: (sql) => prep(sql), raw: db };
+  const batch = async (stmts) => {
+    db.exec("BEGIN");
+    try {
+      const out = stmts.map((st) => ({ meta: { changes: db.prepare(st.sql).run(...st.args).changes } }));
+      db.exec("COMMIT");
+      return out;
+    } catch (e) { db.exec("ROLLBACK"); throw e; }
+  };
+  return { prepare: (sql) => prep(sql), batch, raw: db };
 }
 
 const SECRET = "test-secret";
@@ -224,4 +234,99 @@ test("no secret: the API says so instead of dealing a guessable deck", async () 
   const r = await browser(env)("/api/today");
   assert.equal(r.status, 500);
   assert.match(r.data.error, /DAILY_SECRET/);
+});
+
+// ---------- the ledger ----------
+
+function chainOk(db) {
+  const rows = db.prepare("SELECT * FROM ledger ORDER BY id").all();
+  return rows;
+}
+async function verify(rows) {
+  let prev = GENESIS;
+  for (const r of rows) {
+    assert.equal(r.prev_hash, prev, `entry ${r.id} builds on the wrong head`);
+    assert.equal(r.hash, await sha256(prev + "|" + r.record), `entry ${r.id} hash`);
+    prev = r.hash;
+  }
+}
+
+test("ledger: deal, every move and the run end are sealed, and the chain checks out", async () => {
+  const env = makeEnv();
+  const a = browser(env), b = browser(env);
+  await a("/api/name", { name: "KURA" });
+  const ra = (await a("/api/start", {})).data.run;
+  const rb = (await b("/api/start", {})).data.run;
+  // interleave two players' moves
+  let x = ra, y = rb;
+  for (let i = 0; i < 3; i++) {
+    x = (await a("/api/move", { day: x.day, n: x.n, action: x.view.legal.find((q) => q.type === "take") })).data;
+    y = (await b("/api/move", { day: y.day, n: y.n, action: y.view.legal[0] })).data;
+  }
+  const end = await playThrough(a, x);
+  const rows = chainOk(env.DB.raw);
+  await verify(rows);
+  assert.equal(rows.filter((r) => r.kind === "deal").length, 1);
+  const deal = JSON.parse(rows[0].record);
+  assert.equal(deal.seed_hash, await sha256(await dailySeed(SECRET, utcDay())));
+  const mine = rows.filter((r) => r.kind === "move" && r.run_id === 1);
+  assert.equal(mine.length, end.n);
+  assert.deepEqual(mine.map((r) => r.n), [...Array(end.n)].map((_, i) => i + 1));
+  const last = rows.filter((r) => r.kind === "run");
+  assert.equal(last.length, 1);
+  assert.equal(JSON.parse(last[0].record).score, end.score);
+
+  // the sealed story matches a replay of the moves
+  const seed = await dailySeed(SECRET, utcDay());
+  let s = G.newGame(seed);
+  for (const r of mine) {
+    const rec = JSON.parse(r.record);
+    const act = rec.action === "skip" ? { type: "skip" } : { type: "take", card: s.room.findIndex((c) => G.cardCode(c) === rec.card), ...(rec.action === "take_bare" ? { bare: true } : {}) };
+    assert.equal(rec.hp[0], s.health);
+    s = G.apply(s, act).state;
+    assert.equal(rec.hp[1], s.health);
+  }
+  assert.equal(s.score, end.score);
+});
+
+test("ledger: double-sent moves are sealed once, the chain never forks", async () => {
+  const env = makeEnv();
+  const call = browser(env);
+  const run = (await call("/api/start", {})).data.run;
+  const act = run.view.legal.find((q) => q.type === "take");
+  const res = await Promise.all([1, 2, 3].map(() => call("/api/move", { day: run.day, n: 0, action: act })));
+  assert.equal(res.filter((r) => r.status === 200).length, 1);
+  const rows = chainOk(env.DB.raw);
+  assert.equal(rows.filter((r) => r.kind === "move").length, 1);
+  await verify(rows);
+});
+
+test("ledger: today's moves by others are hidden, yours and run ends are open; past days open up", async () => {
+  const env = makeEnv();
+  const a = browser(env), b = browser(env);
+  await a("/api/name", { name: "KURA" }); await b("/api/name", { name: "PIXIE" });
+  const ra = (await a("/api/start", {})).data.run;
+  await a("/api/move", { day: ra.day, n: 0, action: ra.view.legal.find((q) => q.type === "take") });
+  const rb = (await b("/api/start", {})).data.run;
+  await playThrough(b, rb);
+
+  const seen = (await a("/api/ledger?limit=100")).data;
+  const mine = seen.entries.filter((e) => e.name === "KURA" && e.kind === "move");
+  const theirs = seen.entries.filter((e) => e.name === "PIXIE" && e.kind === "move");
+  assert.ok(mine.length && mine.every((e) => e.record && !e.hidden));
+  assert.ok(theirs.length && theirs.every((e) => e.hidden && !e.record));
+  assert.ok(!JSON.stringify(theirs).includes('"card"'));
+  assert.ok(seen.entries.find((e) => e.kind === "run" && e.name === "PIXIE").record);
+  assert.ok(seen.entries.find((e) => e.kind === "deal").record);
+  // someone with no cookie sees everyone's moves hidden
+  const anon = (await browser(env)("/api/ledger?limit=100")).data;
+  assert.ok(anon.entries.filter((e) => e.kind === "move").every((e) => e.hidden));
+  // paging
+  const p1 = (await a("/api/ledger?limit=3")).data;
+  const p2 = (await a(`/api/ledger?limit=3&before=${p1.entries[2].id}`)).data;
+  assert.ok(p2.entries[0].id < p1.entries[2].id);
+  // the day ends: everything opens
+  env.DB.raw.prepare("UPDATE ledger SET day = '2020-01-01'").run();
+  const later = (await browser(env)("/api/ledger?limit=100")).data;
+  assert.ok(later.entries.every((e) => e.record));
 });

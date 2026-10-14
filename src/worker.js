@@ -12,9 +12,11 @@
 //   GET  /api/leaderboard?day=      a day's top 100; past days also reveal their seed
 //   GET  /api/share?day=            your share card text for a finished run
 //   GET  /api/history               your last 30 runs
+//   GET  /api/ledger?before=&limit=  the ledger, newest first; today's moves by other players are hidden
 
 import * as G from "../engine/scoundrel.js";
 import { dailySeed, utcDay, dayNumber, msUntilNextDay } from "../engine/daily.js";
+import { moveRecord, runRecord, chainInserts, head, ensureDeal, isUnique } from "./ledger.js";
 
 const COOKIE = "sx";
 const COOKIE_MAX_AGE = 400 * 86400;   // the longest browsers allow
@@ -50,6 +52,7 @@ const ROUTES = {
   "GET /api/leaderboard": leaderboard,
   "GET /api/share": share,
   "GET /api/history": history,
+  "GET /api/ledger": ledger,
 };
 
 // ---------- helpers ----------
@@ -62,6 +65,9 @@ function json(data, status = 200, headers = {}) {
 }
 
 const now = () => Math.floor(Date.now() / 1000);
+
+// marks saved before v0.3 used an emoji fist; bare hands is ‼ now (one column, no emoji)
+const fixMarks = (m) => (m == null ? m : String(m).replace(/[\u270A\u00D7]/g, "‼"));
 
 async function sha256(text) {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
@@ -131,7 +137,7 @@ function runView(run, game, events) {
     status: game.status,
     score: game.score,
     view: G.publicView(game),
-    marks: game.status === "playing" ? null : (run.marks ? [...run.marks] : null),
+    marks: game.status === "playing" ? null : (run.marks ? [...fixMarks(run.marks)] : null),
     ...(events ? { events } : {}),
   };
 }
@@ -155,6 +161,7 @@ async function today(req, env) {
 async function start(req, env) {
   const { player, cookie } = await needPlayer(req, env);
   const day = utcDay();
+  await ensureDeal(env, day, await dailySeed(env.DAILY_SECRET, day));
   await env.DB.prepare("INSERT OR IGNORE INTO runs (player_id, day, started_at) VALUES (?, ?, ?)").bind(player.id, day, now()).run();
   const run = await env.DB.prepare("SELECT * FROM runs WHERE player_id = ? AND day = ?").bind(player.id, day).first();
   return json({ ...dayInfo(env, day), name: player.name, run: runView(run, await gameOf(env, run)) }, 200, cookie ? { "set-cookie": cookie } : {});
@@ -165,8 +172,8 @@ async function move(req, env) {
   if (!player) throw new Oops("Start a run first.", 401);
   const b = await body(req);
   const day = checkDay(b.day);
-  const t = utcDay();
-  if (day !== t && day !== yesterday(t)) throw new Oops("That run's day is over.");
+  const today = utcDay();
+  if (day !== today && day !== yesterday(today)) throw new Oops("That run's day is over.");
   const run = await env.DB.prepare("SELECT * FROM runs WHERE player_id = ? AND day = ?").bind(player.id, day).first();
   if (!run) throw new Oops("No run for that day. Start one first.", 404);
   if (run.status !== "playing") throw new Oops("That run is already over.", 409);
@@ -180,20 +187,40 @@ async function move(req, env) {
 
   const seed = await dailySeed(env.DAILY_SECRET, day);
   const actions = JSON.parse(run.actions);
+  const before = G.replay(seed, actions);
   let result;
-  try { result = G.apply(G.replay(seed, actions), action); }
+  try { result = G.apply(before, action); }
   catch (e) { if (e instanceof G.IllegalMove) throw new Oops(e.message, 422); throw e; }
   const game = result.state;
   const done = game.status !== "playing";
   const marks = done ? G.shareMarks(seed, game.log).join("") : null;
+  const t = now();
 
-  // only save if nobody else moved in the meantime (two tabs, double clicks)
-  const saved = await env.DB.prepare(
+  // the move and its ledger entries are one transaction: the run only updates if nobody else moved
+  // in the meantime (two tabs, double clicks), the entries only go in if the run now has this move,
+  // and a double-sent move can't be sealed twice (unique run+n). If another entry took the chain
+  // head first, the whole thing rolls back and we build on the new head and try again.
+  await ensureDeal(env, day, seed);
+  const entries = [{ kind: "move", day, playerId: player.id, runId: run.id, n: game.log.length, t,
+    record: moveRecord({ day, playerId: player.id, runId: run.id, n: game.log.length, room: before.turn, action, before, after: game, events: result.events, t }) }];
+  if (done) entries.push({ kind: "run", day, playerId: player.id, runId: run.id, t, record: runRecord({ day, playerId: player.id, runId: run.id, state: game, t }) });
+  const update = env.DB.prepare(
     `UPDATE runs SET actions = ?, moves = ?, status = ?, score = ?, health = ?, marks = ?, finished_at = ?
      WHERE id = ? AND moves = ?`)
-    .bind(JSON.stringify(game.log), game.log.length, game.status, game.score, game.health, marks, done ? now() : null, run.id, run.moves)
-    .run();
-  if (!saved.meta.changes) throw new Oops("Out of step. Reload to catch up.", 409);
+    .bind(JSON.stringify(game.log), game.log.length, game.status, game.score, game.health, marks, done ? t : null, run.id, run.moves);
+  for (let attempt = 0; ; attempt++) {
+    const inserts = await chainInserts(env.DB, await head(env.DB), entries,
+      { sql: "EXISTS (SELECT 1 FROM runs WHERE id = ? AND moves = ?)", args: [run.id, game.log.length] });
+    let res;
+    try { res = await env.DB.batch([update, ...inserts]); }
+    catch (e) {
+      if (isUnique(e, "prev_hash") && attempt < 8) continue;   // the head moved: try again on top of it
+      if (isUnique(e)) throw new Oops("Out of step. Reload to catch up.", 409);
+      throw e;
+    }
+    if (!res[0].meta.changes) throw new Oops("Out of step. Reload to catch up.", 409);
+    break;
+  }
 
   return json(runView({ ...run, marks }, game, result.events));
 }
@@ -241,7 +268,7 @@ async function leaderboard(req, env, url) {
   return json({
     ...dayInfo(env, day),
     played: counts.played || 0, won: counts.won || 0, playing: counts.playing || 0,
-    top: top.results.map((r, i) => ({ rank: i + 1, name: r.name, score: r.score, status: r.status, marks: r.marks })),
+    top: top.results.map((r, i) => ({ rank: i + 1, name: r.name, score: r.score, status: r.status, marks: fixMarks(r.marks) })),
     you,
     // once a day is over its seed is public, so anyone can check the deck and the scores
     seed: day < t ? await dailySeed(env.DAILY_SECRET, day) : null,
@@ -255,7 +282,7 @@ async function share(req, env, url) {
   const run = await env.DB.prepare("SELECT * FROM runs WHERE player_id = ? AND day = ?").bind(player.id, day).first();
   if (!run || run.status === "playing") throw new Oops("Finish the run first!", 404);
   const n = dayNumber(day, env.LAUNCH_DAY || day);
-  const marks = [...(run.marks || "")];
+  const marks = [...(fixMarks(run.marks) || "")];
   const rows = [];
   for (let i = 0; i < marks.length; i += 7) rows.push(marks.slice(i, i + 7).join(""));
   const head = run.status === "won" ? `cleared ♥${run.health} · score ${run.score}` : `died · score ${run.score}`;
@@ -269,5 +296,29 @@ async function history(req, env) {
   const r = await env.DB.prepare(
     "SELECT day, status, score, marks FROM runs WHERE player_id = ? ORDER BY day DESC LIMIT 30").bind(player.id).all();
   const launch = env.LAUNCH_DAY;
-  return json({ runs: r.results.map((x) => ({ ...x, number: launch ? dayNumber(x.day, launch) : null })) });
+  return json({ runs: r.results.map((x) => ({ ...x, marks: fixMarks(x.marks), number: launch ? dayNumber(x.day, launch) : null })) });
+}
+
+// The ledger, newest first. Today's (and any not-yet-over day's) moves by other players are hidden:
+// you see that they moved, not what they took. Your own moves, deals and finished runs show in full.
+// Once a day is over, everything from it shows in full, and its seed is public on the leaderboard,
+// so anyone can replay every run and check every hash.
+async function ledger(req, env, url) {
+  const limit = Math.min(100, Math.max(1, Number(url.searchParams.get("limit")) || 15));
+  const before = Number(url.searchParams.get("before")) || null;
+  const player = await findPlayer(req, env);
+  const t = utcDay();
+  const rows = (await env.DB.prepare(
+    `SELECT l.id, l.kind, l.day, l.player_id, l.n, l.record, l.prev_hash, l.hash, l.created_at, p.name
+     FROM ledger l LEFT JOIN players p ON p.id = l.player_id
+     ${before ? "WHERE l.id < ?" : ""} ORDER BY l.id DESC LIMIT ?`).bind(...(before ? [before, limit] : [limit])).all()).results;
+  const total = (await env.DB.prepare("SELECT COUNT(*) AS n FROM ledger").first()).n;
+  const entries = rows.map((r) => {
+    const rec = JSON.parse(r.record);
+    const open = r.kind !== "move" || r.day < t || (player && r.player_id === player.id);
+    const base = { id: r.id, kind: r.kind, day: r.day, name: r.name ?? null, player: r.player_id, n: r.n, hash: r.hash, prev_hash: r.prev_hash, at: r.created_at };
+    if (open) return { ...base, record: r.record };
+    return { ...base, hidden: true, room: rec.room, action: rec.action === "skip" ? "skip" : "take" };
+  });
+  return json({ today: t, total, entries, more: rows.length === limit && rows[rows.length - 1].id > 1 });
 }
