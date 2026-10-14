@@ -14,10 +14,17 @@
 //   GET  /api/history               your last 30 runs
 //   GET  /api/ledger?before=&limit=  the ledger, newest first; today's moves by other players are hidden
 //   POST /api/restart               testers only: throw today's run away and deal it again
+//   POST /api/tester {on}           admins only: switch tester on or off for yourself (sealed on the ledger)
+//   GET  /api/account               your name, flags, save codes and passkeys (never the codes themselves)
+//   POST /api/codes {action: "new" | "remove", id}   make a save code (shown once) or forget one
+//   POST /api/load {code}           load the player a save code belongs to on this device
+//   POST /api/passkey {action ...}  register_options / register / login_options / login / remove
 
 import * as G from "../engine/scoundrel.js";
 import { dailySeed, utcDay, dayNumber, msUntilNextDay } from "../engine/daily.js";
-import { moveRecord, runRecord, voidRecord, chainInserts, head, ensureDeal, isUnique } from "./ledger.js";
+import { moveRecord, runRecord, voidRecord, testerRecord, chainInserts, head, ensureDeal, isUnique } from "./ledger.js";
+import { MAX_CODES, newSaveCode, hashCode, newSession, rateLimit } from "./saves.js";
+import { registerOptions, verifyRegistration, loginOptions, verifyLogin } from "./passkeys.js";
 
 const COOKIE = "sx";
 const COOKIE_MAX_AGE = 400 * 86400;   // the longest browsers allow
@@ -55,6 +62,11 @@ const ROUTES = {
   "GET /api/history": history,
   "GET /api/ledger": ledger,
   "POST /api/restart": restart,
+  "POST /api/tester": setTester,
+  "GET /api/account": account,
+  "POST /api/codes": codes,
+  "POST /api/load": loadCode,
+  "POST /api/passkey": passkey,
 };
 
 // ---------- helpers ----------
@@ -89,10 +101,18 @@ function readCookie(req) {
 const setCookie = (token) => `${COOKIE}=${token}; Path=/; Max-Age=${COOKIE_MAX_AGE}; HttpOnly; Secure; SameSite=Lax`;
 
 // The player behind this request's cookie, or null. Never creates one (so crawlers don't make players).
+// A player's first device uses players.token_hash; devices it was loaded on later (save code or passkey)
+// each have a row in sessions.
 async function findPlayer(req, env) {
   const token = readCookie(req);
   if (!token) return null;
-  const p = await env.DB.prepare("SELECT id, name, tester FROM players WHERE token_hash = ?").bind(await sha256(token)).first();
+  const h = await sha256(token);
+  let p = await env.DB.prepare("SELECT id, name, tester, admin FROM players WHERE token_hash = ?").bind(h).first();
+  if (!p) {
+    p = await env.DB.prepare(
+      "SELECT p.id, p.name, p.tester, p.admin FROM sessions s JOIN players p ON p.id = s.player_id WHERE s.token_hash = ?").bind(h).first();
+    if (p) await env.DB.prepare("UPDATE sessions SET seen_at = ? WHERE token_hash = ?").bind(now(), h).run();
+  }
   if (p) await env.DB.prepare("UPDATE players SET seen_at = ? WHERE id = ?").bind(now(), p.id).run();
   return p;
 }
@@ -103,7 +123,7 @@ async function needPlayer(req, env) {
   if (found) return { player: found };
   const token = newToken();
   const t = now();
-  const r = await env.DB.prepare("INSERT INTO players (token_hash, created_at, seen_at) VALUES (?, ?, ?) RETURNING id, name, tester")
+  const r = await env.DB.prepare("INSERT INTO players (token_hash, created_at, seen_at) VALUES (?, ?, ?) RETURNING id, name, tester, admin")
     .bind(await sha256(token), t, t).first();
   return { player: r, cookie: setCookie(token) };
 }
@@ -149,7 +169,7 @@ function runView(run, game, events) {
 async function today(req, env) {
   const info = dayInfo(env);
   const player = await findPlayer(req, env);
-  const out = { ...info, name: player?.name ?? null, tester: !!player?.tester, run: null, unfinished: null };
+  const out = { ...info, name: player?.name ?? null, tester: !!player?.tester, admin: !!player?.admin, run: null, unfinished: null };
   if (!player) return json(out);
   const run = await env.DB.prepare("SELECT * FROM runs WHERE player_id = ? AND day = ?").bind(player.id, info.day).first();
   if (run) out.run = runView(run, await gameOf(env, run));
@@ -171,7 +191,7 @@ async function start(req, env) {
      SELECT COALESCE(MAX(m), 0) + 1, ?, ?, ? FROM (SELECT MAX(id) AS m FROM runs UNION ALL SELECT MAX(run_id) FROM ledger)`)
     .bind(player.id, day, now()).run();
   const run = await env.DB.prepare("SELECT * FROM runs WHERE player_id = ? AND day = ?").bind(player.id, day).first();
-  return json({ ...dayInfo(env, day), name: player.name, tester: !!player.tester, run: runView(run, await gameOf(env, run)) }, 200, cookie ? { "set-cookie": cookie } : {});
+  return json({ ...dayInfo(env, day), name: player.name, tester: !!player.tester, admin: !!player.admin, run: runView(run, await gameOf(env, run)) }, 200, cookie ? { "set-cookie": cookie } : {});
 }
 
 async function move(req, env) {
@@ -351,4 +371,101 @@ async function restart(req, env) {
     }
   }
   return start(req, env);
+}
+
+// Admins only: switch tester on or off for yourself. Each switch is sealed on the ledger, so practising
+// a deck as a tester and then switching back to post a ranked run can't happen quietly.
+async function setTester(req, env) {
+  const player = await findPlayer(req, env);
+  if (!player || !player.admin) throw new Oops("Only admins can do that.", 403);
+  const on = !!(await body(req)).on;
+  if (!!player.tester === on) return json({ tester: on });
+  const t = now();
+  const day = utcDay();
+  const entry = { kind: "tester", day, playerId: player.id, t, record: testerRecord({ day, playerId: player.id, on, t }) };
+  const upd = env.DB.prepare("UPDATE players SET tester = ? WHERE id = ? AND tester = ?").bind(on ? 1 : 0, player.id, on ? 0 : 1);
+  for (let attempt = 0; ; attempt++) {
+    const ins = await chainInserts(env.DB, await head(env.DB), [entry],
+      { sql: "EXISTS (SELECT 1 FROM players WHERE id = ? AND tester = ?)", args: [player.id, on ? 1 : 0] });
+    try { await env.DB.batch([upd, ...ins]); break; }
+    catch (e) { if (isUnique(e, "prev_hash") && attempt < 8) continue; throw e; }
+  }
+  return json({ tester: on });
+}
+
+// ---------- save codes and passkeys ----------
+
+async function account(req, env) {
+  const player = await findPlayer(req, env);
+  if (!player) return json({ player: false, name: null, codes: [], passkeys: [], devices: 0 });
+  const codes = (await env.DB.prepare("SELECT id, created_at, last_used_at FROM save_codes WHERE player_id = ? ORDER BY id").bind(player.id).all()).results;
+  const keys = (await env.DB.prepare("SELECT id, label, created_at, last_used_at FROM passkeys WHERE player_id = ? ORDER BY id").bind(player.id).all()).results;
+  const devices = 1 + (await env.DB.prepare("SELECT COUNT(*) AS n FROM sessions WHERE player_id = ?").bind(player.id).first()).n;
+  return json({ player: true, name: player.name, tester: !!player.tester, admin: !!player.admin, codes, passkeys: keys, devices });
+}
+
+async function codes(req, env) {
+  const b = await body(req);
+  if (b.action === "new") {
+    const { player, cookie } = await needPlayer(req, env);
+    const n = (await env.DB.prepare("SELECT COUNT(*) AS n FROM save_codes WHERE player_id = ?").bind(player.id).first()).n;
+    if (n >= MAX_CODES) throw new Oops(`You have ${MAX_CODES} save codes already. Forget one first.`);
+    const code = newSaveCode();
+    await env.DB.prepare("INSERT INTO save_codes (player_id, code_hash, created_at) VALUES (?, ?, ?)").bind(player.id, await hashCode(code), now()).run();
+    return json({ code }, 200, cookie ? { "set-cookie": cookie } : {});
+  }
+  if (b.action === "remove") {
+    const player = await findPlayer(req, env);
+    if (!player) throw new Oops("No player here.", 401);
+    const r = await env.DB.prepare("DELETE FROM save_codes WHERE id = ? AND player_id = ?").bind(Number(b.id), player.id).run();
+    if (!r.meta.changes) throw new Oops("No such save code.", 404);
+    return json({ ok: true });
+  }
+  throw new Oops("Unknown action.");
+}
+
+// Type a save code: this device becomes that player (the player it was before stays where it is).
+async function loadCode(req, env) {
+  if (!(await rateLimit(env, req, "load", 10, 900))) throw new Oops("Too many tries. Wait 15 minutes and try again.", 429);
+  const code = (await body(req)).code;
+  const row = await env.DB.prepare(
+    "SELECT c.id, p.id AS player_id, p.name FROM save_codes c JOIN players p ON p.id = c.player_id WHERE c.code_hash = ?")
+    .bind(await hashCode(code)).first();
+  if (!row) throw new Oops("That save code didn't work. Check it and try again.", 404);
+  await env.DB.prepare("UPDATE save_codes SET last_used_at = ? WHERE id = ?").bind(now(), row.id).run();
+  const token = await newSession(env, row.player_id);
+  return json({ name: row.name }, 200, { "set-cookie": setCookie(token) });
+}
+
+async function passkey(req, env) {
+  const b = await body(req);
+  try {
+    if (b.action === "login_options" || b.action === "login") {
+      if (!(await rateLimit(env, req, "passkey", 20, 900))) throw new Oops("Too many tries. Wait 15 minutes and try again.", 429);
+      if (b.action === "login_options") return json(await loginOptions(env, req));
+      const playerId = await verifyLogin(env, req, b.credential);
+      const p = await env.DB.prepare("SELECT id, name FROM players WHERE id = ?").bind(playerId).first();
+      if (!p) throw new Oops("That player is gone.", 404);
+      return json({ name: p.name }, 200, { "set-cookie": setCookie(await newSession(env, p.id)) });
+    }
+    if (b.action === "register_options" || b.action === "register") {
+      const { player, cookie } = await needPlayer(req, env);
+      const headers = cookie ? { "set-cookie": cookie } : {};
+      if (b.action === "register_options") return json(await registerOptions(env, req, player), 200, headers);
+      const n = (await env.DB.prepare("SELECT COUNT(*) AS n FROM passkeys WHERE player_id = ?").bind(player.id).first()).n;
+      if (n >= 10) throw new Oops("That's plenty of passkeys! Forget one first.");
+      return json(await verifyRegistration(env, req, player, b.credential, b.label), 200, headers);
+    }
+    if (b.action === "remove") {
+      const player = await findPlayer(req, env);
+      if (!player) throw new Oops("No player here.", 401);
+      const r = await env.DB.prepare("DELETE FROM passkeys WHERE id = ? AND player_id = ?").bind(Number(b.id), player.id).run();
+      if (!r.meta.changes) throw new Oops("No such passkey.", 404);
+      return json({ ok: true });
+    }
+    throw new Oops("Unknown action.");
+  } catch (e) {
+    if (e instanceof Oops) throw e;
+    throw new Oops(e.message || "Something went wrong with the passkey.");
+  }
 }

@@ -4,6 +4,14 @@ Newest first. Times are Hawaii time (HST).
 
 ---
 
+## v0.5.0 — "Take It With You"
+**Wed Oct 14, 2026 · 4:33 AM HST**
+
+- **Save codes and passkeys!** The new **[A]CCOUNT** screen lets you make a save code or add a passkey. Then you can load your player on another browser or device, with your runs, name and all.
+- Your player can be on more than one device at once.
+- Lost a device? Forget its code or passkey from the account screen.
+- Admins can switch tester mode on and off right in the game. Every switch is written on the Ledger.
+
 ## v0.4.0 — "Again!"
 **Wed Oct 14, 2026 · 4:25 AM HST**
 

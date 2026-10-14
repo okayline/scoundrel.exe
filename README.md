@@ -1,4 +1,4 @@
-# scoundrel.exe (v0.4.0)
+# scoundrel.exe (v0.5.0)
 
 A daily seeded Scoundrel game: everyone plays the same 44-card deck each UTC day.
 Scoundrel is a solo card game by Zach Gage and Kurt Bieg (2011).
@@ -12,6 +12,8 @@ engine/daily.js       the daily seed (HMAC of the UTC date with a server secret)
 test/                 tests (node --test)
 src/worker.js         the Cloudflare Worker: daily deal, players, moves, leaderboard, ledger
 src/ledger.js         the ledger: one hash chain over every deal, move and finished run
+src/saves.js          save codes, extra devices, rate limits
+src/passkeys.js       passkeys (WebAuthn), no libraries (ported from the 88x31 cLuB)
 public/index.html     the site: an 80-column text screen (app.js draws it), VT323 font (fonts/OFL.txt)
 migrations/           database changes for an existing database
 schema.sql            database tables (D1)
@@ -58,6 +60,18 @@ npx wrangler d1 execute scoundrel-db --remote --file=002_tester.sql
 npx wrangler d1 execute scoundrel-db --remote --command "UPDATE players SET tester = 1 WHERE name_key = 'kura'"
 ```
 
+v0.5 adds admins (an in-game tester switch) and save codes + passkeys. Run once, then make yourself admin:
+
+```
+curl.exe -O https://raw.githubusercontent.com/okayline/scoundrel.exe/main/migrations/003_admin.sql
+npx wrangler d1 execute scoundrel-db --remote --file=003_admin.sql
+curl.exe -O https://raw.githubusercontent.com/okayline/scoundrel.exe/main/migrations/004_saves.sql
+npx wrangler d1 execute scoundrel-db --remote --file=004_saves.sql
+npx wrangler d1 execute scoundrel-db --remote --command "UPDATE players SET admin = 1 WHERE name_key = 'kura'"
+```
+
+Admins see [T]EST ON/OFF on the title screen; each switch is sealed on the ledger.
+
 Testers get [R]ESTART (press twice): the run is thrown away and the same deck is dealt again. The old
 run's moves stay on the ledger with a "void" entry. `tester = 0` turns it off.
 
@@ -71,6 +85,9 @@ run's moves stay on the ledger with a "void" entry. `tester = 0` turns it off.
   the deck order. Each move is sent to the server, checked by the engine, and saved.
 - **One ranked run a day.** A run started just before midnight can still be finished the next day.
 - **Players are a cookie**, no signup. A name is only needed to show up on the leaderboard.
+- **Save codes and passkeys** (ACCOUNT screen) load the same player on another browser or device.
+  Only hashes of codes and cookie tokens are stored. Code guesses are limited to 10 per 15 minutes.
+  Passkeys belong to the site's address: if the game moves to a new domain, use a save code there.
 - Once a day is over, its seed is public on the leaderboard, so anyone can check the scores.
 
 ## The ledger
@@ -84,6 +101,7 @@ Changing any old record breaks every hash after it, and `prev_hash` is unique so
   A move and its entry are saved in one transaction: a move is saved only if it's sealed.
 - **run**: a run ended (cleared or deleted, score, HP, room).
 - **void**: a tester threw a run away to play the deck again.
+- **tester**: an admin switched tester on or off.
 
 Records hold player ids, never names. Today's moves by other players are hidden on the ledger
 ("took a card") until the day ends; your own moves, deals and run endings always show in full.
@@ -100,6 +118,11 @@ GET  /api/share?day=              share card text for a finished run
 GET  /api/history                 your last 30 runs
 GET  /api/ledger?before=&limit=   the ledger, newest first (today's moves by others hidden)
 POST /api/restart                 testers only: throw today's run away, deal the same deck again
+POST /api/tester  {on}            admins only: switch tester on or off (sealed on the ledger)
+GET  /api/account                 your name, flags, save codes and passkeys (never the codes)
+POST /api/codes   {action, id}    "new" makes a save code (shown once), "remove" forgets one
+POST /api/load    {code}          load the player a save code belongs to on this browser
+POST /api/passkey {action, ...}   register_options, register, login_options, login, remove
 ```
 
 ## Try it

@@ -370,3 +370,149 @@ test("testers: restart deals the same deck again, voids the old run on the ledge
   assert.equal(b.you.tester, true);
   assert.ok(end1.status !== "playing");
 });
+
+test("admins switch tester on and off in the game; each switch is sealed; others can't", async () => {
+  const env = makeEnv();
+  const call = browser(env), other = browser(env);
+  await call("/api/name", { name: "KURA" }); await other("/api/name", { name: "PIXIE" });
+  assert.equal((await call("/api/tester", { on: true })).status, 403);
+  env.DB.raw.prepare("UPDATE players SET admin = 1 WHERE name_key = 'kura'").run();
+  assert.equal((await call("/api/today")).data.admin, true);
+  assert.equal((await call("/api/tester", { on: true })).data.tester, true);
+  assert.equal((await call("/api/today")).data.tester, true);
+  assert.equal((await call("/api/tester", { on: true })).data.tester, true);   // already on: no new entry
+  const r = (await call("/api/restart", {})).status;
+  assert.equal(r, 200);
+  assert.equal((await call("/api/tester", { on: false })).data.tester, false);
+  assert.equal((await call("/api/restart", {})).status, 403);
+  assert.equal((await other("/api/tester", { on: true })).status, 403);
+  const rows = env.DB.raw.prepare("SELECT * FROM ledger ORDER BY id").all();
+  await verify(rows);
+  assert.deepEqual(rows.filter((x) => x.kind === "tester").map((x) => JSON.parse(x.record).on), [true, false]);
+});
+
+// ---------- save codes and passkeys ----------
+
+test("save codes: load your player on another device; codes are hashed, limited and removable", async () => {
+  const env = makeEnv();
+  const home = browser(env);
+  await home("/api/name", { name: "KURA" });
+  const run = (await home("/api/start", {})).data.run;
+  await home("/api/move", { day: run.day, n: 0, action: run.view.legal.find((q) => q.type === "take") });
+  const { code } = (await home("/api/codes", { action: "new" })).data;
+  assert.match(code, /^[2-9A-HJKMNP-Z]{4}(-[2-9A-HJKMNP-Z]{4}){4}$/);
+  assert.equal(env.DB.raw.prepare("SELECT COUNT(*) n FROM save_codes WHERE code_hash LIKE ?").get("%" + code + "%").n, 0);
+
+  // a phone: wrong code, then the right one typed sloppily
+  const phone = browser(env);
+  assert.equal((await phone("/api/load", { code: "AAAA-BBBB-CCCC-DDDD-EEEE" })).status, 404);
+  const loaded = await phone("/api/load", { code: code.toLowerCase().replace(/-/g, " ") });
+  assert.equal(loaded.status, 200);
+  assert.equal(loaded.data.name, "KURA");
+  const t = (await phone("/api/today")).data;
+  assert.equal(t.name, "KURA");
+  assert.equal(t.run.n, 1);                 // the same run, mid-game
+  const m = await phone("/api/move", { day: t.run.day, n: 1, action: t.run.view.legal.find((q) => q.type === "take") });
+  assert.equal(m.status, 200);
+  assert.equal((await home("/api/today")).data.run.n, 2);   // both devices see it
+
+  // flags follow the player
+  env.DB.raw.prepare("UPDATE players SET admin = 1").run();
+  assert.equal((await phone("/api/today")).data.admin, true);
+
+  const acc = (await phone("/api/account")).data;
+  assert.equal(acc.devices, 2);
+  assert.equal(acc.codes.length, 1);
+  assert.ok(!JSON.stringify(acc).includes(code));
+  for (let i = 0; i < 4; i++) assert.equal((await home("/api/codes", { action: "new" })).status, 200);
+  assert.equal((await home("/api/codes", { action: "new" })).status, 400);
+  assert.equal((await phone("/api/codes", { action: "remove", id: acc.codes[0].id })).status, 200);
+  assert.equal((await browser(env)("/api/load", { code })).status, 404);   // forgotten codes stop working
+});
+
+test("save codes: guessing is rate limited", async () => {
+  const env = makeEnv();
+  const guesser = browser(env);
+  const res = [];
+  for (let i = 0; i < 12; i++) res.push((await guesser("/api/load", { code: "ZZZZ-ZZZZ-ZZZZ-ZZZZ-ZZZ" + (i % 9 + 1) })).status);
+  assert.deepEqual(res.slice(0, 10), Array(10).fill(404));
+  assert.equal(res[10], 429);
+});
+
+// a software passkey (ES256), standing in for a phone's fingerprint / face / PIN
+const b64u = (b) => Buffer.from(b).toString("base64url");
+function cborEnc(v) {
+  const head = (major, n) => n < 24 ? [major << 5 | n] : n < 256 ? [major << 5 | 24, n] : [major << 5 | 25, n >> 8, n & 255];
+  if (typeof v === "number") return Uint8Array.from(v >= 0 ? head(0, v) : head(1, -1 - v));
+  if (typeof v === "string") { const b = new TextEncoder().encode(v); return Uint8Array.from([...head(3, b.length), ...b]); }
+  if (v instanceof Uint8Array) return Uint8Array.from([...head(2, v.length), ...v]);
+  if (v instanceof Map) { const parts = [...v].flatMap(([k, x]) => [...cborEnc(k), ...cborEnc(x)]); return Uint8Array.from([...head(5, v.size), ...parts]); }
+  throw new Error("cbor?");
+}
+async function softPasskey() {
+  const kp = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+  const jwk = await crypto.subtle.exportKey("jwk", kp.publicKey);
+  const credId = crypto.getRandomValues(new Uint8Array(16));
+  const rpHash = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode("scoundrel.example")));
+  let count = 0;
+  const authData = (attested) => {
+    const flags = 1 | 4 | (attested ? 64 : 0);
+    const cnt = [0, 0, 0, count];
+    if (!attested) return Uint8Array.from([...rpHash, flags, ...cnt]);
+    const cose = cborEnc(new Map([[1, 2], [3, -7], [-1, 1], [-2, Buffer.from(jwk.x, "base64url")], [-3, Buffer.from(jwk.y, "base64url")]]));
+    return Uint8Array.from([...rpHash, flags, ...cnt, ...new Uint8Array(16), 0, credId.length, ...credId, ...cose]);
+  };
+  const client = (type, challenge) => new TextEncoder().encode(JSON.stringify({ type, challenge, origin: "https://scoundrel.example" }));
+  return {
+    create(opts) {
+      count++;
+      const att = cborEnc(new Map([["fmt", "none"], ["attStmt", new Map()], ["authData", authData(true)]]));
+      return { id: b64u(credId), response: { clientDataJSON: b64u(client("webauthn.create", opts.challenge)), attestationObject: b64u(att) } };
+    },
+    async get(opts) {
+      count++;
+      const ad = authData(false);
+      const cd = client("webauthn.get", opts.challenge);
+      const h = new Uint8Array(await crypto.subtle.digest("SHA-256", cd));
+      const raw = new Uint8Array(await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, kp.privateKey, Uint8Array.from([...ad, ...h])));
+      // WebAuthn sends ECDSA signatures DER-encoded
+      const int = (x) => { let i = 0; while (i < 31 && x[i] === 0) i++; x = x.slice(i); return x[0] & 0x80 ? [0, ...x] : [...x]; };
+      const r = int(raw.slice(0, 32)), s = int(raw.slice(32));
+      const der = Uint8Array.from([0x30, r.length + s.length + 4, 2, r.length, ...r, 2, s.length, ...s]);
+      return { id: b64u(credId), response: { clientDataJSON: b64u(cd), authenticatorData: b64u(ad), signature: b64u(der) } };
+    },
+  };
+}
+
+test("passkeys: add one on this device, load the player on another, stale or forged answers fail", async () => {
+  const env = makeEnv();
+  const home = browser(env);
+  await home("/api/name", { name: "KURA" });
+  await home("/api/start", {});
+  const key = await softPasskey();
+  const ro = (await home("/api/passkey", { action: "register_options" })).data;
+  assert.equal(ro.rp.name, "scoundrel.exe");
+  assert.equal(ro.user.name, "KURA");
+  const reg = await home("/api/passkey", { action: "register", label: "test phone", credential: key.create(ro) });
+  assert.equal(reg.status, 200, JSON.stringify(reg.data));
+  assert.equal((await home("/api/account")).data.passkeys.length, 1);
+
+  const laptop = browser(env);
+  const lo = (await laptop("/api/passkey", { action: "login_options" })).data;
+  const got = await laptop("/api/passkey", { action: "login", credential: await key.get(lo) });
+  assert.equal(got.status, 200, JSON.stringify(got.data));
+  assert.equal(got.data.name, "KURA");
+  assert.equal((await laptop("/api/today")).data.name, "KURA");
+
+  // the same answer can't be used twice (its challenge is used up)
+  const lo2 = (await laptop("/api/passkey", { action: "login_options" })).data;
+  const answer = await key.get(lo2);
+  assert.equal((await browser(env)("/api/passkey", { action: "login", credential: answer })).status, 200);
+  assert.equal((await browser(env)("/api/passkey", { action: "login", credential: answer })).status, 400);
+  // a different key claiming the same credential id fails the signature
+  const fake = await softPasskey();
+  const lo3 = (await laptop("/api/passkey", { action: "login_options" })).data;
+  const forged = await fake.get(lo3);
+  forged.id = answer.id;
+  assert.equal((await browser(env)("/api/passkey", { action: "login", credential: forged })).status, 400);
+});
