@@ -4,6 +4,11 @@ Newest first. Times are Hawaii time (HST).
 
 ---
 
+## v0.8.6 — "Countdown"
+**Wed Oct 14, 2026 · 6:47 AM HST**
+
+- The top right shows **NEXT DECK DEALT IN** and a countdown again.
+
 ## v0.8.5 — "Battle Log"
 **Wed Oct 14, 2026 · 6:44 AM HST**
 

@@ -5,7 +5,7 @@
 // that draws them wide can never push the line out of place.
 
 const W = 80, IN = W - 4;                     // screen width, and the width inside the frame
-const VERSION = "v0.8.5";
+const VERSION = "v0.8.6";
 const RANK = { 11: "J", 12: "Q", 13: "K", 14: "A" };
 const SUIT = { C: "♣", S: "♠", D: "♦", H: "♥" };
 const KIND = { monster: "DEMON", weapon: "BLADE", potion: "HEALTH" };
@@ -127,10 +127,10 @@ function draw() {
 }
 
 function header(left) {
-  // SCOUNDREL.EXE   //   NAME   //   SCREEN          date   //   time UTC
+  // SCOUNDREL.EXE   //   NAME   //   SCREEN          NEXT DECK DEALT IN hh:mm:ss
   const who = T && T.name ? T.name.toUpperCase() : "GUEST";
   const [name, ...rest] = left.split(/\s{3,}/);
-  const wide = [name, who, ...rest].join("  //  "), right = nowStamp();
+  const wide = [name, who, ...rest].join("  //  "), right = `NEXT DECK DEALT IN ${countdown()}`;
   // a long name squeezes the separators so the line still fits in 80 columns
   return wide.length + right.length < IN ? spread(wide, right) : spread([name, who, ...rest].join(" // "), right);
 }
