@@ -4,6 +4,15 @@ Newest first. Times are Hawaii time (HST).
 
 ---
 
+## v0.8.5 — "Battle Log"
+**Wed Oct 14, 2026 · 6:44 AM HST**
+
+- **HISTORY** under the rooms bar: one mark per room as you go, like the share card. ↷ skipped, ⚔ blade, ‼ bare hands, ♥ healed.
+- **LAST** at the bottom right shows your last two moves in words, newest first: `#14 ⚔ slew 7♠`.
+- **SLAIN** sits right under CAN HIT.
+- New top line: `SCOUNDREL.EXE // NAME // DECK #1` on the left, the date and time on the right.
+- Admins can see every move on the ledger.
+
 ## v0.8.4 — "Free Play"
 **Wed Oct 14, 2026 · 6:35 AM HST**
 

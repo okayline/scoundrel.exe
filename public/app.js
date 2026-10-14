@@ -5,7 +5,7 @@
 // that draws them wide can never push the line out of place.
 
 const W = 80, IN = W - 4;                     // screen width, and the width inside the frame
-const VERSION = "v0.8.4";
+const VERSION = "v0.8.5";
 const RANK = { 11: "J", 12: "Q", 13: "K", 14: "A" };
 const SUIT = { C: "♣", S: "♠", D: "♦", H: "♥" };
 const KIND = { monster: "DEMON", weapon: "BLADE", potion: "HEALTH" };
@@ -69,7 +69,7 @@ const deckNo = (n) => "#" + String(n).padStart(3, "0");
 function nowStamp() {
   const d = new Date();
   const day = d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "2-digit", year: "numeric", timeZone: "UTC" }).toUpperCase().replace(/,/g, "");
-  return `${day}   ${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())} UTC`;
+  return `${day} // ${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())} UTC`;
 }
 
 // ---------- drawing ----------
@@ -127,8 +127,12 @@ function draw() {
 }
 
 function header(left) {
+  // SCOUNDREL.EXE   //   NAME   //   SCREEN          date   //   time UTC
   const who = T && T.name ? T.name.toUpperCase() : "GUEST";
-  return spread(`${left}   ${who}`, mode === "title" ? nowStamp() : `NEXT DEAL ${countdown()}`);
+  const [name, ...rest] = left.split(/\s{3,}/);
+  const wide = [name, who, ...rest].join("  //  "), right = nowStamp();
+  // a long name squeezes the separators so the line still fits in 80 columns
+  return wide.length + right.length < IN ? spread(wide, right) : spread([name, who, ...rest].join(" // "), right);
 }
 
 const logRow = (i) => [S("> ", "dim"), typeof log[i] === "string" ? S(log[i], i === 2 ? "flavor" : "") : log[i]];
@@ -239,6 +243,9 @@ function gameScreen() {
   const rooms = v.turn + Math.ceil(v.deckCount / 3);
   const fill = Math.round((v.turn / rooms) * 18);
   L.push(["ROOMS    ", "█".repeat(fill), S("░".repeat(18 - fill), "dim"), `  room ${pad2(v.turn)} of ~${rooms}`]);
+  // one mark per finished room, like the share card
+  const marks = (run.history || []).filter((h) => h.done).map((h) => h.mark);
+  if (marks.length) L.push([], ["HISTORY  ", S(marks.join(marks.length > 18 ? "" : " "), "marks")]);
 
   // right side: 26 wide
   const R = [];
@@ -251,16 +258,22 @@ function gameScreen() {
     // a blade only hits demons lower than its last kill: say what that leaves
     const top = v.weaponCeiling;
     R.push(["BLADE  ", S(nm(v.weapon.card), "blade"), S(!top ? "  hits anything" : top <= 2 ? "  hits nothing" : `  hits up to ${rk(top - 1)}`, "dim")]);
-    R.push(!top ? ["  CAN HIT  anything"] : top <= 2 ? ["  CAN HIT  ", S("nothing (dull)", "dim")] : [`  CAN HIT  2 to ${rk(top - 1)}`], []);
+    R.push(!top ? ["  CAN HIT  anything"] : top <= 2 ? ["  CAN HIT  ", S("nothing (dull)", "dim")] : [`  CAN HIT  2 to ${rk(top - 1)}`]);
+    R.push(v.weapon.kills.length ? ["  SLAIN    ", S(v.weapon.kills.slice(-5).map(nm).join(" "), "demon")] : []);   // line 7 is always SLAIN
   } else {
     R.push(["BLADE  ", S("none", "dim")], [S("  BARE HANDS ONLY", "dim")], []);
   }
   R.push([]);
   R.push(["HEAL   ", v.potionUsedThisRoom ? S("used", "dim") : "ready"]);
   R.push(["SKIP   ", v.canSkip ? "ready" : S(skipWhy(v), "dim")]);
-  if (v.weapon && v.weapon.kills.length) R.push([], ["SLAIN  ", S(v.weapon.kills.slice(-5).map(nm).join(" "), "demon")]);
   R.push([], ["IN DECK  ", `${String(v.deckMonsters).padStart(2)} DEMON${v.deckMonsters === 1 ? "" : "S"}`],
     ["         ", `${String(v.deckWeapons).padStart(2)} BLADE${v.deckWeapons === 1 ? "" : "S"}`], ["         ", `${String(v.deckPotions).padStart(2)} HEALTH CARD${v.deckPotions === 1 ? "" : "S"}`]);
+  // the last two things you did, in words (newest first, next to LAST)
+  const said = (x) => x.type === "skip" ? "skipped the room" : x.type === "fight" ? (x.armed ? `⚔ slew ${nm(x.card)}` : `‼ fought ${nm(x.card)} bare`)
+    : x.type === "heal" ? `♥ healed with ${nm(x.card)}` : x.type === "potion_wasted" ? `wasted ${nm(x.card)}` : `picked up ${nm(x.card)}`;
+  const steps = (run.history || []).flatMap((h) => h.steps);   // one step per move, so its place is the move number
+  const last = steps.map((x, i) => [i + 1, x]).slice(-2).reverse();
+  if (last.length) R.push([], ...last.map(([n, x], i) => [i ? "     " : "LAST ", S(`#${pad2(n)} `, "dim"), said(x)]));
 
   const rows = [];
   for (let i = 0; i < 17; i++) rows.push([...padTo(L[i] || [], 47), S(" | ", "fr"), ...(R[i] || [])]);
@@ -801,7 +814,7 @@ async function startFree() {
 function freeView(state, events) {
   const done = state.status !== "playing";
   return { free: true, state, day: T.day, n: state.log.length, status: state.status, score: state.score, view: G.publicView(state),
-    marks: done ? G.shareMarks(state.seed, state.log) : null, ...(events ? { events } : {}) };
+    marks: done ? G.shareMarks(state.seed, state.log) : null, history: G.roomHistory(state.seed, state.log), ...(events ? { events } : {}) };
 }
 function freeMove(action) {
   try { const { state, events } = G.apply(run.state, action); return freeView(state, events); }

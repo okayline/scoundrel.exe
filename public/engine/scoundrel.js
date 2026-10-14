@@ -307,19 +307,33 @@ export function publicView(s) {
 //   ↷ skipped   ⚔ used the weapon   ‼ fought bare-handed   ♥ healed   · nothing to fight
 // (all single-column text characters, so they line up in a monospace grid; no emoji)
 export function shareMarks(seed, actions, rules = {}) {
+  return roomHistory(seed, actions, rules).filter((r) => r.done).map((r) => r.mark);
+}
+
+// What happened in each room, in order: { turn, mark, steps, done }. A step is
+// { type: "skip" | "fight" | "heal" | "potion_wasted" | "equip", card?, armed? }. The last room is
+// the one being played (done: false) unless the run is over. Only cards the player already saw.
+export function roomHistory(seed, actions, rules = {}) {
   let s = newGame(seed, rules);
   const rooms = [];
-  let cur = "";
+  let cur = { turn: s.turn, steps: [] };
+  const close = (done) => { rooms.push({ ...cur, mark: markOf(cur.steps), done }); };
   for (const a of actions) {
     const { state, events } = apply(s, a);
     for (const e of events) {
-      if (e.type === "skip") cur += "↷";
-      else if (e.type === "fight") cur += e.armed ? "⚔" : "‼";
-      else if (e.type === "heal") cur += "♥";
-      else if (e.type === "deal" || e.type === "won" || e.type === "dead") { if (cur) rooms.push(cur); cur = ""; }
+      if (e.type === "skip") cur.steps.push({ type: "skip" });
+      else if (e.type === "fight") cur.steps.push({ type: "fight", card: e.card, armed: e.armed });
+      else if (e.type === "heal" || e.type === "potion_wasted" || e.type === "equip") cur.steps.push({ type: e.type, card: e.card });
+      else if (e.type === "deal") { close(true); cur = { turn: e.turn, steps: [] }; }
+      else if (e.type === "won" || e.type === "dead") { close(true); cur = null; }
     }
     s = state;
+    if (!cur) break;
   }
-  if (cur) rooms.push(cur);
-  return rooms.map((r) => (r.includes("↷") ? "↷" : r.includes("‼") ? "‼" : r.includes("⚔") ? "⚔" : r.includes("♥") ? "♥" : "·"));
+  if (cur && cur.steps.length) close(false);
+  return rooms;
 }
+const markOf = (steps) => {
+  const t = steps.map((x) => (x.type === "skip" ? "↷" : x.type === "fight" ? (x.armed ? "⚔" : "‼") : x.type === "heal" ? "♥" : ""));
+  return t.includes("↷") ? "↷" : t.includes("‼") ? "‼" : t.includes("⚔") ? "⚔" : t.includes("♥") ? "♥" : "·";
+};

@@ -163,6 +163,7 @@ function runView(run, game, events) {
     status: game.status,
     score: game.score,
     view: G.publicView(game),
+    history: G.roomHistory(game.seed, game.log),   // what happened in each room so far (cards already seen)
     marks: game.status === "playing" ? null : (run.marks ? [...fixMarks(run.marks)] : null),
     ...(events ? { events } : {}),
   };
@@ -348,7 +349,8 @@ async function ledger(req, env, url) {
   const total = (await env.DB.prepare("SELECT COUNT(*) AS n FROM ledger").first()).n;
   const entries = rows.map((r) => {
     const rec = JSON.parse(r.record);
-    const open = r.kind !== "move" || r.day < t || (player && r.player_id === player.id);   // deals, run ends and voids are open
+    // deals, run ends and voids are open; admins see every move
+    const open = r.kind !== "move" || r.day < t || (player && (r.player_id === player.id || player.admin));
     const base = { id: r.id, kind: r.kind, day: r.day, name: r.name ?? null, player: r.player_id, n: r.n, hash: r.hash, prev_hash: r.prev_hash, at: r.created_at };
     if (open) return { ...base, record: r.record };
     return { ...base, hidden: true, room: rec.room, action: rec.action === "skip" ? "skip" : "take" };
