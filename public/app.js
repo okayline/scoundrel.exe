@@ -157,9 +157,9 @@ function titleScreen() {
   const r = T.run;
   const played = board && board.day === T.day ? board.played : null;
   const stat = (label, value) => ["                        ", S(dots(label), "dim"), value];
-  let go = "[ENTER] PLAY";
-  if (r && r.status === "playing" || T.unfinished) go = "[ENTER] CONTINUE";
-  if (r && r.status !== "playing" && !T.unfinished) go = "[ENTER] YOUR RUN";
+  let go = "[P]LAY";
+  if (r && r.status === "playing" || T.unfinished) go = "[P] CONTINUE";
+  if (r && r.status !== "playing" && !T.unfinished) go = "[P] YOUR RUN";
   return ["=", header("SCOUNDREL.EXE"), "=", "~",
     ...LOGO.map((l) => center(S(l, "logo"))), "",
     stat("TODAY'S DECK", deckNo(T.number)),
@@ -169,9 +169,8 @@ function titleScreen() {
     "",
     center(r && r.status !== "playing" ? (r.status === "won" ? "YOU CLEARED TODAY'S DECK." : "TODAY'S DECK GOT YOU.") : "44 CARDS. 20 HP. ONE RUN."),
     "~", "-", ...(guestBox() ? whoRows() : logRows()), "-",
-    // not logged in: the box takes the keyboard, so the other pages are click-only here
-    guestBox() ? bar([["[ENTER] PLAY", "enter"], ["[ESC] PLAY AS GUEST", "esc"], ["[B]OARD", "b"], ["[L]EDGER", "l"], ["[H]ELP", "h"], ["[P]LAYER", "a"]])
-      : bar([[go, "enter"], ["[B]OARD", "b"], ["[L]EDGER", "l"], ["[H]ELP", "h"], ["[P]LAYER", "a"]]),
+    T.name ? bar([[go, "p"], ["[B]OARD", "b"], ["[U]SER", "u"], ["[?]", "?"]])
+      : bar([[go, "p"], ["[L]OG IN", "l"], ["[B]OARD", "b"], ["[?]", "?"]]),
     "="];
 }
 
@@ -179,7 +178,7 @@ function titleScreen() {
 // Not logged in: the front page's third log line asks who's playing, with the name box already open.
 // A name makes a new player and starts; ESC (or ENTER on an empty box) plays as a guest.
 // (Logging in as an existing player is on the PLAYER page.)
-const guestBox = () => mode === "title" && T && !T.name;
+const guestBox = () => false;   // name box on the front page is off
 function whoRows() {
   return [
     logRow(0),
@@ -248,7 +247,7 @@ function gameScreen() {
   for (let i = 0; i < 17; i++) rows.push([...padTo(L[i] || [], 47), S(" | ", "fr"), ...(R[i] || [])]);
   const n = room.length;
   return ["=", header(`SCOUNDREL.EXE   DECK ${deckNo(dayNo(run.day))}`), "=", ...rows, "-", ...logRows(), "-",
-    bar([["[1-4] TAKE", null], ["[B]ARE HANDS", "b", !room.some((c) => c.kind === "monster"), bare], ["[S]KIP ROOM", "s", !v.canSkip], ["[?] HELP", "h"],
+    bar([["[1-4] TAKE", null], ["[B]ARE HANDS", "b", !room.some((c) => c.kind === "monster"), bare], ["[S]KIP ROOM", "s", !v.canSkip], ["[?]", "?"], ["[ESC] TITLE", "esc"],
       ...(T.admin ? [["[R]ESTART", "r"]] : [])]),
     "="];
 }
@@ -545,8 +544,16 @@ async function addPasskey() {
   busy = false; draw();
 }
 
+let loginBack = "load";  // where Esc goes from the code box
+async function quickLogIn() {
+  loginBack = "title";
+  if (!pkSupported()) { nameErr = ""; mode = "loadcode"; return draw(); }
+  const ok = await loadWithPasskey();
+  if (!ok) { nameErr = ""; mode = "loadcode"; draw(); }
+}
+
 async function loadWithPasskey() {
-  if (busy || !pkSupported()) return;
+  if (busy || !pkSupported()) return false;
   busy = true;
   say("Waiting for your passkey...", ""); draw();
   try {
@@ -557,8 +564,9 @@ async function loadWithPasskey() {
         signature: toB64(cred.response.signature) },
     } });
     await loaded(d.name);
+    busy = false; draw(); return true;
   } catch (e) { say(S(pkOops(e).toUpperCase(), "demon")); }
-  busy = false; draw();
+  busy = false; draw(); return false;
 }
 
 async function loadWithCode() {
@@ -803,11 +811,11 @@ async function key(k) {
   }
   if (mode === "loadcode") {
     if (k === "enter") return loadWithCode();
-    if (k === "esc") { nameErr = ""; mode = "load"; return draw(); }
+    if (k === "esc") { nameErr = ""; mode = loginBack; loginBack = "load"; return draw(); }
     return;
   }
   if (mode === "load") {
-    if (k === "c") { nameErr = ""; mode = "loadcode"; return draw(); }
+    if (k === "c") { nameErr = ""; loginBack = "load"; mode = "loadcode"; return draw(); }
     if (k === "k") return loadWithPasskey();
     if (k === "esc") return openAccountBack();
     return;
@@ -838,7 +846,7 @@ async function key(k) {
   }
   if (mode === "board" && k === "l") return openLedger();
   if (mode === "help" || mode === "board") {
-    if (k === "esc" || k === "h" && mode === "help" || k === "b" && mode === "board") { mode = back; return draw(); }
+    if (k === "esc" || (k === "h" || k === "?") && mode === "help" || k === "b" && mode === "board") { mode = back; return draw(); }
     if (mode === "board" && k === "left" && boardDay > (T.launch || T.day)) return loadBoard(shiftDay(boardDay, -1));
     if (mode === "board" && k === "right" && boardDay < T.day) return loadBoard(shiftDay(boardDay, 1));
     if (mode === "board" && k === "s" && share) return copyShare();
@@ -846,10 +854,10 @@ async function key(k) {
   }
   if (k === "h" || k === "?") { go("help"); return draw(); }
   if (mode === "title") {
-    if (k === "enter") return jackIn();
+    if (k === "p" || k === "enter") return jackIn();
     if (k === "b") { go("board"); return loadBoard(T.day); }
-    if (k === "l") return openLedger();
-    if (k === "a" || k === "p") { acctBack = "title"; return openAccount(); }
+    if (k === "l" && !T.name) return quickLogIn();
+    if (k === "u" && T.name) { acctBack = "title"; return openAccount(); }
   }
   if (k === "r" && T.admin && (mode === "game" || mode === "end")) return restartRun();
   if (mode === "game") {
@@ -857,6 +865,7 @@ async function key(k) {
     if (k === "b" && run.view.room.some((c) => c.kind === "monster")) { bare = !bare; say(bare ? "Bare hands. Pick a demon." : "Blade back up.", undefined); return draw(); }
     if (k === "s") { if (run.view.canSkip) return act({ type: "skip" }); say(S(`CAN'T SKIP: ${skipWhy(run.view).replace(/^no \(|\)$/g, "").toUpperCase()}.`, "demon")); return draw(); }
     if (k === "esc" && bare) { bare = false; return draw(); }
+    if (k === "esc") { mode = "title"; return draw(); }
   }
   if (mode === "end") {
     if (k === "s") return copyShare();

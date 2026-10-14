@@ -4,6 +4,15 @@ Newest first. Times are Hawaii time (HST).
 
 ---
 
+## v0.8.0 — "Fewer Doors"
+**Wed Oct 14, 2026 · 5:55 AM HST**
+
+- The front page is just **[P]LAY**, **[B]OARD**, **[U]SER** and **[?]**. Not logged in, it's **[P]LAY**, **[L]OG IN**, **[B]OARD** and **[?]**.
+- **[L]OG IN** opens your passkey right away. No passkey, or cancel it, and you get the save code box.
+- No more WHO'S PLAYING? box on the front page.
+- **[ESC] TITLE** in the middle of a run takes you back to the front page. Your run waits for you: **[P] CONTINUE**.
+- The ledger is inside the board. **[H]ELP** is just **[?]**. **PLAYER** is **USER**.
+
 ## v0.7.3 — "Brackets Back"
 **Wed Oct 14, 2026 · 5:42 AM HST**
 
