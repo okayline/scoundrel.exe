@@ -4,6 +4,17 @@ Newest first. Times are Hawaii time (HST).
 
 ---
 
+## v0.8.2 — "Click Means Click"
+**Wed Oct 14, 2026 · 6:12 AM HST**
+
+- **Clicks always count now.** Sometimes a click on a card or a button didn't do anything. Fixed everywhere.
+- A card **squeezes** when you take it.
+- **NEXT ROOM...** shows for a moment between rooms.
+- The bar under the table is **ROOMS** now: room 05 of ~14.
+- Your blade says what it **hits up to**. What it has killed is **SLAIN**, at the bottom of the right side.
+- What's **LEFT** in the deck is on the right side too. Your HP bar moved down a line.
+- The ledger has a **[B]OARD** button to go back to the board.
+
 ## v0.8.1 — "Name Tag"
 **Wed Oct 14, 2026 · 5:59 AM HST**
 

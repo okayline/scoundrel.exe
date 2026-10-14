@@ -5,7 +5,7 @@
 // that draws them wide can never push the line out of place.
 
 const W = 80, IN = W - 4;                     // screen width, and the width inside the frame
-const VERSION = "v0.8.1";
+const VERSION = "v0.8.2";
 const RANK = { 11: "J", 12: "Q", 13: "K", 14: "A" };
 const SUIT = { C: "♣", S: "♠", D: "♦", H: "♥" };
 const KIND = { monster: "DEMON", weapon: "BLADE", potion: "HEALTH" };
@@ -21,6 +21,8 @@ let share = null;        // share text for boardDay (if you finished it)
 let mode = "title";      // title | game | end | board | ledger | help | name | account | newcode | load | loadcode | loading
 let back = "title";      // where Esc goes from board/help/name
 let bare = false;        // [B] pressed: the next demon is fought bare-handed
+let between = false;
+let pulseK = null;       // the card just clicked: it squeezes for a moment     // the short pause between rooms
 let busy = false;
 let deadline = 0;        // when the next deck deals (ms)
 let log = ["", "", ""];  // two status lines, then one flavor line
@@ -110,6 +112,7 @@ function draw() {
   $screen.innerHTML = html(frame(lines));
   const box = document.getElementById("nameinput");
   if (box) { if (keepName != null) box.value = keepName; box.focus(); }
+  if (pulseK) $screen.querySelectorAll(`[data-k="${pulseK}"]`).forEach((el) => el.classList.add("pulse"));
 }
 
 function header(left) {
@@ -197,11 +200,12 @@ function gameScreen() {
   L.push([], [], []);
   // the 4 slots on the table: a card keeps its slot (and its number) until it's taken
   const slots = v.slots || room.map((_, i) => i);
-  const at = (k) => (slots[k] == null ? null : room[slots[k]]);
+  const at = (k) => (between || slots[k] == null ? null : room[slots[k]]);
   const blank = "         ";
   // the little v over the card the mouse is on
   const pickRow = [];
-  for (let k = 0; k < 4; k++) { if (k) pickRow.push("  "); pickRow.push(at(k) && hoverK === String(k + 1) ? "    v    " : blank); }
+  if (between) pickRow.push(S("                NEXT ROOM...", "dim"));
+  else for (let k = 0; k < 4; k++) { if (k) pickRow.push("  "); pickRow.push(at(k) && hoverK === String(k + 1) ? "    v    " : blank); }
   L.push(pickRow);
   const cards = [0, 1, 2, 3].map((k) => (at(k) ? cardRows(at(k), String(k + 1)) : null));
   for (let row = 0; row < 5; row++) {
@@ -219,30 +223,32 @@ function gameScreen() {
   }
   L.push(lab, hint, [], [], []);
   // how far through the dungeon, and what's still in the deck
-  const seen = 44 - v.deckCount - room.length;
-  const fill = Math.round((seen / 44) * 30);
-  L.push(["DUNGEON  ", "█".repeat(fill), S("░".repeat(30 - fill), "dim"), `  ${String(seen).padStart(2)}/44`]);
-  L.push([S(`LEFT     ${v.deckMonsters} DEMON${v.deckMonsters === 1 ? "" : "S"} · ${v.deckWeapons} BLADE${v.deckWeapons === 1 ? "" : "S"} · ${v.deckPotions} HEALTH`, "dim")]);
+  // rooms: this one, plus one for every 3 cards still in the deck (a guess: skips add rooms)
+  const rooms = v.turn + Math.ceil(v.deckCount / 3);
+  const fill = Math.round((v.turn / rooms) * 18);
+  L.push(["ROOMS    ", "█".repeat(fill), S("░".repeat(18 - fill), "dim"), `  room ${pad2(v.turn)} of ~${rooms}`]);
 
   // right side: 26 wide
   const R = [];
   const hp = Math.max(0, v.health);
   R.push([`HP  ${String(v.health).padStart(2)}/20`]);
+  R.push([]);
   R.push(["█".repeat(hp), S("░".repeat(20 - hp), "dim")]);
   R.push([]);
   if (v.weapon) {
-    R.push(["BLADE  ", S(nm(v.weapon.card), "blade")]);
-    const kills = v.weapon.kills.slice(-5).map(nm).join(" ");
-    R.push(v.weapon.kills.length ? ["  KILLS  ", S(kills, "demon")] : [S("  NO KILLS YET", "dim")]);
     // a blade only hits demons lower than its last kill: say what that leaves
     const top = v.weaponCeiling;
-    R.push(!top ? ["  CAN HIT  anything"] : top <= 2 ? ["  CAN HIT  ", S("nothing (dull)", "dim")] : [`  CAN HIT  2 to ${rk(top - 1)}`]);
+    R.push(["BLADE  ", S(nm(v.weapon.card), "blade"), S(!top ? "  hits anything" : top <= 2 ? "  hits nothing" : `  hits up to ${rk(top - 1)}`, "dim")]);
+    R.push(!top ? ["  CAN HIT  anything"] : top <= 2 ? ["  CAN HIT  ", S("nothing (dull)", "dim")] : [`  CAN HIT  2 to ${rk(top - 1)}`], []);
   } else {
     R.push(["BLADE  ", S("none", "dim")], [S("  BARE HANDS ONLY", "dim")], []);
   }
   R.push([]);
   R.push(["HEAL   ", v.potionUsedThisRoom ? S("used", "dim") : "ready"]);
   R.push(["SKIP   ", v.canSkip ? "ready" : S(skipWhy(v), "dim")]);
+  if (v.weapon && v.weapon.kills.length) R.push([], ["SLAIN  ", S(v.weapon.kills.slice(-5).map(nm).join(" "), "demon")]);
+  R.push([], ["LEFT   ", `${v.deckMonsters} DEMON${v.deckMonsters === 1 ? "" : "S"}`],
+    ["       ", `${v.deckWeapons} BLADE${v.deckWeapons === 1 ? "" : "S"}`], ["       ", `${v.deckPotions} HEALTH`]);
 
   const rows = [];
   for (let i = 0; i < 17; i++) rows.push([...padTo(L[i] || [], 47), S(" | ", "fr"), ...(R[i] || [])]);
@@ -370,7 +376,7 @@ function ledgerScreen() {
   }
   const body = []; for (let i = 0; i < 17; i++) body.push(rows[i] || "");
   return ["=", spread("SCOUNDREL.EXE   LEDGER", L ? `${L.total} ENTRIES SEALED` : ""), "=", ...body, "-", ...logRows(), "-",
-    bar([["[<] NEWER", "left", !ledgerPages.length], ["[>] OLDER", "right", !(L && L.more)], ["[ESC] BACK", "esc"]]),
+    bar([["[<] NEWER", "left", !ledgerPages.length], ["[>] OLDER", "right", !(L && L.more)], ["[B]OARD", "b"], ["[ESC] BACK", "esc"]]),
     "="];
 }
 
@@ -725,6 +731,7 @@ async function take(k) {
   const i = v.slots ? v.slots[k] : k;
   const c = i == null ? null : v.room[i];
   if (!c) return;
+  pulseK = String(k + 1); draw(); setTimeout(() => { pulseK = null; }, 250);
   const action = { type: "take", card: i };
   if (c.kind === "monster" && (bare || !canHit(run.view, c))) action.bare = true;
   await act(action);
@@ -734,6 +741,8 @@ async function act(action) {
   busy = true;
   try {
     const r = await api("/api/move", { day: run.day, n: run.n, action });
+    const newRoom = r.status === "playing" && run.view && r.view.turn !== run.view.turn;
+    if (newRoom) { between = true; draw(); await new Promise((ok) => setTimeout(ok, 900)); between = false; }
     run = r;
     if (run.day === T.day) T.run = r; else if (r.status !== "playing") T.unfinished = null;
     bare = false;
@@ -841,6 +850,7 @@ async function key(k) {
   }
   if (mode === "ledger") {
     if (k === "esc" || k === "l") { mode = back; return draw(); }
+    if (k === "b") { go("board"); return loadBoard(boardDay || T.day); }
     if (k === "right" && ledgerData && ledgerData.more) { ledgerPages.push(ledgerBefore); return loadLedger(ledgerData.entries[ledgerData.entries.length - 1].id); }
     if (k === "left" && ledgerPages.length) return loadLedger(ledgerPages.pop());
     return;
@@ -893,9 +903,18 @@ $screen.addEventListener("mouseover", (e) => {
   if (k !== hoverK) { hoverK = k; draw(); }
 });
 $screen.addEventListener("mouseleave", () => { if (hoverK) { hoverK = null; draw(); } });
-$screen.addEventListener("click", (e) => {
+// The screen redraws every second (and on hover), so a press and a release can land on different
+// elements and the browser drops the click. So act on a press and release over the same key instead.
+let downK = null;
+$screen.addEventListener("pointerdown", (e) => {
   const b = e.target.closest("[data-k]");
-  if (b && !b.classList.contains("off")) key(b.dataset.k);
+  downK = b && !b.classList.contains("off") ? b.dataset.k : null;
+});
+$screen.addEventListener("pointerup", (e) => {
+  const b = e.target.closest("[data-k]");
+  const k = b && !b.classList.contains("off") ? b.dataset.k : null;
+  if (k && k === downK) key(k);
+  downK = null;
 });
 
 // the clock: redraw each second (but not while typing a name), and a new deck at midnight UTC

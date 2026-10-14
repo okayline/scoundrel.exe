@@ -48,6 +48,8 @@
   .marks { color: var(--fg); letter-spacing: 0; }
   .btn { cursor: pointer; color: var(--bright); }
   .clk { cursor: pointer; }   /* cards: clickable, no highlight (the v above shows which one) */
+  .pulse { display: inline-block; animation: pulse 0.25s ease-out; }   /* a card squeezes when you take it */
+  @keyframes pulse { 0% { transform: scale(1); } 40% { transform: scale(0.85); } 100% { transform: scale(1); } }
   .btn:hover { background: var(--fg); color: var(--bg); }
   .btn.off { color: var(--dim); cursor: default; }
   .btn.off:hover { background: none; color: var(--dim); }
@@ -65,6 +67,6 @@
     <div class="frame"><pre id="screen" aria-live="polite">LOADING...</pre></div>
     <div id="ver" class="ver"></div>
   </div>
-  <script src="app.js?v=0.8.1" defer></script>
+  <script src="app.js?v=0.8.2" defer></script>
 </body>
 </html>
