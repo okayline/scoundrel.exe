@@ -5,7 +5,7 @@
 // that draws them wide can never push the line out of place.
 
 const W = 80, IN = W - 4;                     // screen width, and the width inside the frame
-const VERSION = "v0.7.1";
+const VERSION = "v0.7.2";
 const RANK = { 11: "J", 12: "Q", 13: "K", 14: "A" };
 const SUIT = { C: "♣", S: "♠", D: "♦", H: "♥" };
 const KIND = { monster: "DEMON", weapon: "BLADE", potion: "HEALTH" };
@@ -105,7 +105,7 @@ let drawnMode = null;
 function draw() {
   const keepName = drawnMode === mode ? document.getElementById("nameinput")?.value : null;   // typing survives redraws of the same screen
   drawnMode = mode;
-  const lines = { title: titleScreen, who: titleScreen, game: gameScreen, end: endScreen, board: boardScreen, ledger: ledgerScreen, help: helpScreen, name: nameScreen,
+  const lines = { title: titleScreen, game: gameScreen, end: endScreen, board: boardScreen, ledger: ledgerScreen, help: helpScreen, name: nameScreen,
     account: accountScreen, newcode: newCodeScreen, load: loadScreen, loadcode: loadCodeScreen, loading: loadingScreen }[mode]();
   $screen.innerHTML = html(frame(lines));
   const box = document.getElementById("nameinput");
@@ -113,12 +113,11 @@ function draw() {
 }
 
 function header(left) {
-  return spread(left, mode === "title" || mode === "who" ? nowStamp() : `NEXT DEAL ${countdown()}`);
+  return spread(left, mode === "title" ? nowStamp() : `NEXT DEAL ${countdown()}`);
 }
 
-function logRows() {
-  return log.map((l, i) => [S("> ", "dim"), typeof l === "string" ? S(l, i === 2 ? "flavor" : "") : l]);
-}
+const logRow = (i) => [S("> ", "dim"), typeof log[i] === "string" ? S(log[i], i === 2 ? "flavor" : "") : log[i]];
+function logRows() { return [0, 1, 2].map(logRow); }
 
 function say(status, flavor) {
   for (const s of [].concat(status || [])) { log[0] = log[1]; log[1] = s; }
@@ -169,18 +168,23 @@ function titleScreen() {
     stat("PLAYING AS", T.name ? T.name + (T.admin ? "  (ADMIN)" : "") : S("guest", "dim")),
     "",
     center(r && r.status !== "playing" ? (r.status === "won" ? "YOU CLEARED TODAY'S DECK." : "TODAY'S DECK GOT YOU.") : "44 CARDS. 20 HP. ONE RUN."),
-    "~", "-", ...(mode === "who" ? whoRows() : logRows()), "-",
-    mode === "who" ? bar([["[ENTER] OK", "enter"], ["[ESC] PLAY AS GUEST", "esc"]])
+    "~", "-", ...(guestBox() ? whoRows() : logRows()), "-",
+    // not logged in: the box takes the keyboard, so the other pages are click-only here
+    guestBox() ? bar([["[ENTER] PLAY", "enter"], ["[ESC] PLAY AS GUEST", "esc"], ["BOARD", "b"], ["LEDGER", "l"], ["HELP", "h"], ["PLAYER", "a"]])
       : bar([[go, "enter"], ["[B]OARD", "b"], ["[L]EDGER", "l"], ["[H]ELP", "h"], ["[P]LAYER", "a"]]),
     "="];
 }
 
 // the first time a guest starts a run: ask for a name, right on the title screen
+// Not logged in: the front page's third log line asks who's playing, with the name box already open.
+// A name makes a new player and starts; ESC (or ENTER on an empty box) plays as a guest.
+// (Logging in as an existing player is on the PLAYER page.)
+const guestBox = () => mode === "title" && T && !T.name;
 function whoRows() {
   return [
+    logRow(0),
+    nameErr ? [S("> ", "dim"), S(nameErr.toUpperCase(), "demon")] : logRow(1),
     [S("> ", "dim"), "WHO'S PLAYING?   NAME: ", { input: true, w: 16 }],
-    [S("> ", "dim"), nameErr ? S(nameErr.toUpperCase(), "demon") : S("A name puts you on the leaderboard. Guests' runs count, but don't show.", "dim")],
-    [S("> ", "dim")],
   ];
 }
 
@@ -680,16 +684,15 @@ async function jackIn() {
   if (busy) return;
   if (run && run.status === "playing") { mode = "game"; say(`Room ${pad2(run.view.turn)}. Picking up where you left off.`, pick(FLAVOR.deal)); draw(); return; }
   if (run) { await showEnd(); return; }
-  if (!T.name) { mode = "who"; nameErr = ""; return draw(); }   // a guest: ask who's playing first
   return startRun();
 }
 
-// "who's playing?": save the name, then start
+// the front page's box: a name makes a new player and starts; empty plays as a guest
 async function whoOk() {
   const box = document.getElementById("nameinput");
-  const name = (box ? box.value : "").trim();
-  if (!name) { nameErr = ""; mode = "title"; return startRun(); }
-  try { const d = await api("/api/name", { name }); T.name = d.name; nameErr = ""; mode = "title"; return startRun(); }
+  const text = (box ? box.value : "").trim();
+  if (!text) { nameErr = ""; return jackIn(); }
+  try { const d = await api("/api/name", { name: text }); T.name = d.name; nameErr = ""; return jackIn(); }
   catch (e) { nameErr = e.message; draw(); }
 }
 
@@ -789,9 +792,13 @@ async function key(k) {
     if (k === "esc") { nameErr = ""; mode = back === "account" ? "account" : back; return back === "account" ? openAccountBack() : draw(); }
     return;
   }
-  if (mode === "who") {
+  if (guestBox()) {
     if (k === "enter") return whoOk();
-    if (k === "esc") { nameErr = ""; mode = "title"; return startRun(); }
+    if (k === "esc") { nameErr = ""; return jackIn(); }
+    if (k === "b") { go("board"); return loadBoard(T.day); }     // clicks only (letters type in the box)
+    if (k === "l") return openLedger();
+    if (k === "h") { go("help"); return draw(); }
+    if (k === "a") { acctBack = "title"; return openAccount(); }
     return;
   }
   if (mode === "loadcode") {
@@ -863,7 +870,7 @@ async function key(k) {
 const KEYS = { Enter: "enter", Escape: "esc", ArrowLeft: "left", ArrowRight: "right", "?": "?" };
 document.addEventListener("keydown", (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
-  if ((mode === "name" || mode === "loadcode" || mode === "who") && !["Enter", "Escape"].includes(e.key)) return;   // typing in a box
+  if ((mode === "name" || mode === "loadcode" || guestBox()) && !["Enter", "Escape"].includes(e.key)) return;   // typing in a box
   const k = KEYS[e.key] || (e.key.length === 1 ? e.key.toLowerCase() : null);
   if (!k) return;
   e.preventDefault();
@@ -888,7 +895,9 @@ setInterval(async () => {
     if (mode === "title") board = null;
     say(`A new deck is dealt: ${deckNo(T.number)}.`, "Everyone starts again.");
   }
-  if (mode === "title" || mode === "game" || mode === "end") draw();
+  // (not while someone's typing in the front page's box)
+  const typing = document.activeElement && document.activeElement.id === "nameinput" && document.activeElement.value;
+  if ((mode === "title" && !typing) || mode === "game" || mode === "end") draw();
 }, 1000);
 
 // ---------- start ----------

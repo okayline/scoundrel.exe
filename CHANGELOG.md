@@ -4,6 +4,11 @@ Newest first. Times are Hawaii time (HST).
 
 ---
 
+## v0.7.2 — "Who's Playing?"
+**Wed Oct 14, 2026 · 5:38 AM HST**
+
+- The front page asks **WHO'S PLAYING?** with the name box already open. Just type your name and press ENTER to play, or ESC to play as a guest.
+
 ## v0.7.1 — "New Address"
 **Wed Oct 14, 2026 · 5:27 AM HST**
 
