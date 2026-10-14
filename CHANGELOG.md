@@ -4,6 +4,14 @@ Newest first. Times are Hawaii time (HST).
 
 ---
 
+## v0.7.1 — "New Address"
+**Wed Oct 14, 2026 · 5:27 AM HST**
+
+- **scoundrel.exe has a home: scoundrel.88x31.app!** The old address sends you there.
+- **Download your save code** as a .txt file, so it's easy to keep safe.
+- Passkeys are **PASS[K]EY** now. If you add one without a save code, the game reminds you to make one too.
+- After a run, the menu is just **[S]HARE**, **[B]OARD** and **[ESC] TITLE**. [S]HARE copies your share card.
+
 ## v0.7.0 — "Who Goes There?"
 **Wed Oct 14, 2026 · 5:10 AM HST**
 

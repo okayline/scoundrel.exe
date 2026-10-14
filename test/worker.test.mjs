@@ -505,3 +505,12 @@ test("log out: needs a way back in first; then this browser is a guest and can l
   await home("/api/load", { code });
   assert.equal((await home("/api/today")).data.name, "KURA");
 });
+
+test("the old workers.dev address redirects to the real domain", async () => {
+  const env = { ...makeEnv(), CANONICAL_HOST: "scoundrel.88x31.app" };
+  const r = await worker.fetch(new Request("https://scoundrel-exe.someone.workers.dev/api/today?x=1"), env);
+  assert.equal(r.status, 301);
+  assert.equal(r.headers.get("location"), "https://scoundrel.88x31.app/api/today?x=1");
+  const ok = await worker.fetch(new Request("https://scoundrel.88x31.app/api/today"), env);
+  assert.equal(ok.status, 200);
+});

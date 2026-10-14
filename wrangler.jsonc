@@ -8,6 +8,10 @@
     "directory": "public",
     "run_worker_first": ["/api/*"]
   },
+  // the game's home. The old workers.dev address redirects here (see CANONICAL_HOST).
+  "routes": [
+    { "pattern": "scoundrel.88x31.app", "custom_domain": true }
+  ],
   "d1_databases": [
     {
       "binding": "DB",
@@ -17,7 +21,9 @@
   ],
   "vars": {
     // Day #1 of the daily deck (UTC). Share cards say "scoundrel.exe #N".
-    "LAUNCH_DAY": "2026-10-14"
+    "LAUNCH_DAY": "2026-10-14",
+    // requests to any *.workers.dev address are sent here instead (passkeys belong to one address)
+    "CANONICAL_HOST": "scoundrel.88x31.app"
   }
   // Secret (not in this file): DAILY_SECRET, the key that makes each day's deck.
   //   npx wrangler secret put DAILY_SECRET

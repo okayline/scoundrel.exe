@@ -34,6 +34,10 @@ const RESERVED = new Set(["admin", "webmaster", "scoundrel", "scoundrel.exe", "a
 export default {
   async fetch(req, env) {
     const url = new URL(req.url);
+    // one home: the old workers.dev address redirects to the real domain
+    if (env.CANONICAL_HOST && url.hostname.endsWith(".workers.dev")) {
+      return Response.redirect(`https://${env.CANONICAL_HOST}${url.pathname}${url.search}`, 301);
+    }
     if (!url.pathname.startsWith("/api/")) return env.ASSETS ? env.ASSETS.fetch(req) : new Response("Not found", { status: 404 });
     try {
       if (!env.DAILY_SECRET) return json({ error: "The server has no DAILY_SECRET set." }, 500);

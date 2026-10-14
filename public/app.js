@@ -5,7 +5,7 @@
 // that draws them wide can never push the line out of place.
 
 const W = 80, IN = W - 4;                     // screen width, and the width inside the frame
-const VERSION = "v0.7.0";
+const VERSION = "v0.7.1";
 const RANK = { 11: "J", 12: "Q", 13: "K", 14: "A" };
 const SUIT = { C: "♣", S: "♠", D: "♦", H: "♥" };
 const KIND = { monster: "DEMON", weapon: "BLADE", potion: "HEALTH" };
@@ -294,8 +294,7 @@ function endScreen() {
     "",
     ["                        ", S(marks, "marks")],
     "~", "-", ...logRows(), "-",
-    bar([["[C]OPY SHARE", "c"], ["[B]OARD", "b"], ["[L]EDGER", "l"], ["[P]LAYER", "a"], ["[ESC] TITLE", "esc"],
-      ...(T.admin ? [["[R]ESTART", "r"]] : [])]),
+    bar([["[S]HARE", "s"], ["[B]OARD", "b"], ["[ESC] TITLE", "esc"], ...(T.admin ? [["[R]ESTART", "r"]] : [])]),
     "="];
 }
 
@@ -322,7 +321,7 @@ function boardScreen() {
   const last = boardDay >= T.day;
   const info = b ? `${b.played} RAN  ·  ${b.won} CLEARED` : "";
   return ["=", spread(`SCOUNDREL.EXE   LEADERBOARD   DECK ${deckNo(dayNo(boardDay))}`, info), "=", ...rows, "-", ...logRows(), "-",
-    bar([["[<]", "left", first], ["[>] DAY", "right", last], ["[C]OPY SHARE", "c", !share], ["[L]EDGER", "l"], ["[ESC] BACK", "esc"]]),
+    bar([["[<]", "left", first], ["[>] DAY", "right", last], ["[S]HARE", "s", !share], ["[L]EDGER", "l"], ["[ESC] BACK", "esc"]]),
     "="];
 }
 
@@ -441,7 +440,7 @@ function accountScreen() {
   rows.push(S("  A save code or passkey lets you log in as this player on any browser or", "dim"));
   rows.push(S("  device: on that one, open PLAYER and press [L]OG IN.", "dim"));
   return ["=", spread("SCOUNDREL.EXE   PLAYER", ""), "=", ...rows, "-", ...logRows(), "-",
-    bar([["[N]AME", "n"], ["[S]AVE CODE", "s"], ["[K]EY", "k"], ["[D]ELETE", "d", !(acct && (acct.codes.length || acct.passkeys.length)), forgetArmed],
+    bar([["[N]AME", "n"], ["[S]AVE CODE", "s"], ["PASS[K]EY", "k"], ["[D]ELETE", "d", !(acct && (acct.codes.length || acct.passkeys.length)), forgetArmed],
       [loggedIn() ? "[L]OG OUT" : "[L]OG IN", "l", false, logoutArmed], ["[ESC] BACK", "esc"]]),
     "="];
 }
@@ -453,7 +452,7 @@ function newCodeScreen() {
     center(S("Write it down or keep it in a password manager. It won't be shown again.", "dim")),
     center(S("Anyone with this code can load your player, so keep it to yourself.", "dim")),
     "~", "-", ...logRows(), "-",
-    bar([["[C]OPY", "c"], ["[ESC] DONE", "esc"]]), "="];
+    bar([["[C]OPY", "c"], ["[D]OWNLOAD .TXT", "d"], ["[ESC] DONE", "esc"]]), "="];
 }
 
 function loadScreen() {
@@ -461,7 +460,7 @@ function loadScreen() {
     center("LOG IN AS YOUR PLAYER"), "",
     center(S("Use a save code or a passkey you made before.", "dim")),
     "~", "-", ...logRows(), "-",
-    bar([["[C]ODE", "c"], ["[K]EY (PASSKEY)", "k", !pkSupported()], ["[ESC] BACK", "esc"]]), "="];
+    bar([["[C]ODE", "c"], ["PASS[K]EY", "k", !pkSupported()], ["[ESC] BACK", "esc"]]), "="];
 }
 
 function loadCodeScreen() {
@@ -471,6 +470,30 @@ function loadCodeScreen() {
     center(nameErr ? S(nameErr.toUpperCase(), "demon") : S("Dashes and spaces don't matter.", "dim")),
     "~", "-", ...logRows(), "-",
     bar([["[ENTER] LOG IN", "enter"], ["[ESC] BACK", "esc"]]), "="];
+}
+
+// the save code as a little text file, so it can be kept somewhere safe
+function downloadCode() {
+  const who = T.name || "your player";
+  const text = [
+    "scoundrel.exe save code",
+    "",
+    `  ${newCode}`,
+    "",
+    `This code logs you in as ${who} on any browser or device.`,
+    `On that one: open ${location.origin}, press P (PLAYER), L (LOG IN), C (CODE), and type it in.`,
+    "Keep it private: anyone with this code can log in as you.",
+    `Made ${new Date().toISOString().slice(0, 10)}.`,
+    "",
+  ].join("\r\n");
+  try {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
+    a.download = `scoundrel-save-code${T.name ? "-" + T.name.toLowerCase().replace(/[^a-z0-9]+/g, "-") : ""}.txt`;
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    say("Save code downloaded as a .txt file.", "Keep it somewhere safe.");
+  } catch { say("Couldn't download. Copy it or write it down instead.", ""); }
 }
 
 async function openAccount() {
@@ -510,8 +533,10 @@ async function addPasskey() {
     await api("/api/passkey", { action: "register", label: deviceName(), credential: {
       id: cred.id, response: { clientDataJSON: toB64(cred.response.clientDataJSON), attestationObject: toB64(cred.response.attestationObject) },
     } });
-    say("Passkey saved.", "On another device: PLAYER, [L]OG IN, [K]EY.");
     acct = await api("/api/account").catch(() => acct);
+    // passkeys only work on this site's address: a save code is the backup if that ever changes
+    if (acct && !acct.codes.length) say("Passkey saved.", "Make a [S]AVE CODE too, as a backup.");
+    else say("Passkey saved.", "On another device: PLAYER, [L]OG IN, PASS[K]EY.");
   } catch (e) { say(S(pkOops(e).toUpperCase(), "demon")); }
   busy = false; draw();
 }
@@ -734,7 +759,7 @@ async function showEnd() {
 
 async function copyShare() {
   if (!share) { try { share = await api(`/api/share?day=${run ? run.day : T.day}`); } catch (e) { return oops(e.message); } }
-  try { await navigator.clipboard.writeText(share.text); say("Share card copied. Paste it anywhere.", "No spoilers in it. Just the route."); }
+  try { await navigator.clipboard.writeText(share.text); say("Your share card is copied. Paste it anywhere.", "No spoilers in it. Just the route."); }
   catch { say("Couldn't copy. Your browser said no.", ""); }
   draw();
 }
@@ -782,6 +807,7 @@ async function key(k) {
   }
   if (mode === "newcode") {
     if (k === "c") { try { await navigator.clipboard.writeText(newCode); say("Copied. Paste it somewhere safe.", ""); } catch { say("Couldn't copy. Write it down instead.", ""); } return draw(); }
+    if (k === "d") { downloadCode(); return draw(); }
     if (k === "esc" || k === "enter") { newCode = null; return openAccountBack(); }
     return;
   }
@@ -808,7 +834,7 @@ async function key(k) {
     if (k === "esc" || k === "h" && mode === "help" || k === "b" && mode === "board") { mode = back; return draw(); }
     if (mode === "board" && k === "left" && boardDay > (T.launch || T.day)) return loadBoard(shiftDay(boardDay, -1));
     if (mode === "board" && k === "right" && boardDay < T.day) return loadBoard(shiftDay(boardDay, 1));
-    if (mode === "board" && k === "c" && share) return copyShare();
+    if (mode === "board" && k === "s" && share) return copyShare();
     return;
   }
   if (k === "h" || k === "?") { go("help"); return draw(); }
@@ -826,7 +852,7 @@ async function key(k) {
     if (k === "esc" && bare) { bare = false; return draw(); }
   }
   if (mode === "end") {
-    if (k === "c") return copyShare();
+    if (k === "s") return copyShare();
     if (k === "b") { go("board"); return loadBoard(run.day); }
     if (k === "l") return openLedger();
     if (k === "a" || k === "p") { acctBack = "end"; return openAccount(); }

@@ -1,4 +1,4 @@
-# scoundrel.exe (v0.7.0)
+# scoundrel.exe (v0.7.1)
 
 A daily seeded Scoundrel game: everyone plays the same 44-card deck each UTC day.
 Scoundrel is a solo card game by Zach Gage and Kurt Bieg (2011).
@@ -23,7 +23,9 @@ play.mjs              play it in a terminal
 
 ## Setup (once)
 
-The Worker `scoundrel-exe` is connected to this repo, so every push to `main` deploys it.
+Live at **https://scoundrel.88x31.app** (a custom domain on the Worker, set in `wrangler.jsonc`; the old
+workers.dev address redirects there). The Worker `scoundrel-exe` is connected to this repo, so every push
+to `main` deploys it.
 It needs a database and a secret first. From a terminal in this folder, with Node.js installed
 (PowerShell works as-is):
 
@@ -96,6 +98,7 @@ npx wrangler d1 execute scoundrel-db --remote --command "DELETE FROM ledger"
   [L]OG OUT makes this browser a guest again (only once you have a save code or passkey to get back in).
   Only hashes of codes and cookie tokens are stored. Code guesses are limited to 10 per 15 minutes.
   Passkeys belong to the site's address: if the game moves to a new domain, use a save code there.
+  Adding a passkey without a save code nudges you to make one as a backup. Save codes can be downloaded as a .txt.
 - Once a day is over, its seed is public on the leaderboard, so anyone can check the scores.
 
 ## The ledger
