@@ -4,6 +4,14 @@ Newest first. Times are Hawaii time (HST).
 
 ---
 
+## v0.8.8 — "Steady Screen"
+**Thu Oct 15, 2026 · 10:25 AM HST**
+
+- **No more full-screen redraws.** The whole screen used to be torn down and rebuilt every second and on every hover, which made the pointer flicker to an arrow, dropped hovers and cut animations short. Now only the lines that actually changed are updated (the countdown, the little v).
+- A card **squeezes the instant you pick it**, instead of after the server answers.
+- The line under each card is part of the card: pointer and click work there too.
+- (Fixes the page not picking up new versions: the script's cache tag was stuck at 0.8.6.)
+
 ## v0.8.7 — "Click Through"
 **Thu Oct 15, 2026 · 10:20 AM HST**
 

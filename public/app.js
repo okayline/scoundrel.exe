@@ -5,7 +5,7 @@
 // that draws them wide can never push the line out of place.
 
 const W = 80, IN = W - 4;                     // screen width, and the width inside the frame
-const VERSION = "v0.8.7";
+const VERSION = "v0.8.8";
 const RANK = { 11: "J", 12: "Q", 13: "K", 14: "A" };
 const SUIT = { C: "♣", S: "♠", D: "♦", H: "♥" };
 const KIND = { monster: "DEMON", weapon: "BLADE", potion: "HEALTH" };
@@ -32,7 +32,6 @@ const dailyDone = () => !!(T && T.run && T.run.status !== "playing");
 // one free run to learn the rules before your first ranked run; after that, free play opens once today's run is done
 const canFree = () => !!T && (dailyDone() || (!everPlayed && !T.run && !T.unfinished && !store.get("scoundrel.learned")));
 const freeOpen = () => canFree() || !!(freeRun && freeRun.status === "playing");   // a free run you left can always be picked back up
-let pulseK = null;       // the card just clicked: it squeezes for a moment     // the short pause between rooms
 let busy = false;
 let deadline = 0;        // when the next deck deals (ms)
 let log = ["", "", ""];  // two status lines, then one flavor line
@@ -107,22 +106,41 @@ function html(lines) {
     if (typeof s === "string") s = { t: s };
     if (s.input) return `<input id="nameinput" class="nameinput${nameErr ? " bad" : ""}" maxlength="${s.max || 16}" spellcheck="false" autocomplete="off" style="width:${s.w}ch" value="${esc(s.value || "")}">`;
     let t = esc(s.t).replace(GLYPH, (g) => `<span class="g">${g}${g === "⚔" || g === "‼" ? "\uFE0E" : ""}</span>`);
-    const isCard = /\bcard\b/.test(s.c || "");
+    const isCard = /\b(card|clk)\b/.test(s.c || "");
     const cls = [s.c, s.k ? (isCard ? "clk" : "btn") : ""].filter(Boolean).join(" ");
     return cls || s.k ? `<span${cls ? ` class="${cls}"` : ""}${s.k ? ` data-k="${s.k}"` : ""}>${t}</span>` : t;
-  }).join("")).join("\n");
+  }).join(""));   // one html string per line
 }
 
 let drawnMode = null;
+let shown = [];   // the html of each line now on the screen
 function draw() {
-  const keepName = drawnMode === mode ? document.getElementById("nameinput")?.value : null;   // typing survives redraws of the same screen
+  const same = drawnMode === mode;
+  const keepName = same ? document.getElementById("nameinput")?.value : null;   // typing survives redraws of the same screen
   drawnMode = mode;
   const lines = { title: titleScreen, game: gameScreen, end: endScreen, board: boardScreen, ledger: ledgerScreen, help: helpScreen, name: nameScreen,
     account: accountScreen, newcode: newCodeScreen, load: loadScreen, loadcode: loadCodeScreen, loading: loadingScreen }[mode]();
-  $screen.innerHTML = html(frame(lines));
+  const rows = html(frame(lines));
+  const spans = $screen.children;   // one <span class="ln"> per line
+  if (same && spans.length === rows.length) {
+    // same screen, same size: rewrite only the lines that changed (the countdown, the little v).
+    // Everything else stays the very same element, so the pointer, a hover, a click or a
+    // running animation is never pulled out from under you.
+    rows.forEach((r, i) => { if (r !== shown[i]) spans[i].innerHTML = r; });
+  } else {
+    $screen.innerHTML = rows.map((r) => `<span class="ln">${r}</span>`).join("\n");
+  }
+  shown = rows;
   const box = document.getElementById("nameinput");
   if (box) { if (keepName != null) box.value = keepName; box.focus(); }
-  if (pulseK) $screen.querySelectorAll(`[data-k="${pulseK}"]`).forEach((el) => el.classList.add("pulse"));
+}
+
+// a card squeezes the moment you pick it (straight on the element: no redraw, so nothing cuts it short)
+function squeeze(k) {
+  $screen.querySelectorAll(`[data-k="${k}"]`).forEach((el) => {
+    el.classList.add("pulse");
+    setTimeout(() => el.classList.remove("pulse"), 260);
+  });
 }
 
 function header(left) {
@@ -234,7 +252,7 @@ function gameScreen() {
     if (k) { lab.push("  "); hint.push("  "); }
     const c = at(k);
     lab.push(c ? S(`[${k + 1}]${KIND[c.kind]}`.padEnd(9), KIND_CLASS[c.kind], String(k + 1)) : blank);
-    hint.push(c ? S(preview(v, c).padEnd(9), "dim") : blank);
+    hint.push(c ? S(preview(v, c).padEnd(9), "dim clk", String(k + 1)) : blank);
   }
   L.push(lab, hint, [], [], []);
   // how far through the dungeon, and what's still in the deck
@@ -968,7 +986,7 @@ document.addEventListener("keydown", (e) => {
   const k = KEYS[e.key] || (e.key.length === 1 ? e.key.toLowerCase() : null);
   if (!k) return;
   e.preventDefault();
-  if (mode === "game" && /^[1-4]$/.test(k) && !busy) { pulseK = k; setTimeout(() => { pulseK = null; }, 250); }
+  if (mode === "game" && /^[1-4]$/.test(k) && !busy) squeeze(k);
   key(k);
 });
 $screen.addEventListener("mouseover", (e) => {
@@ -991,7 +1009,7 @@ $screen.addEventListener("pointerup", (e) => {
   const k = b && !b.classList.contains("off") ? b.dataset.k : null;
   const was = downK; downK = null;
   if (k && k === was) {
-    if (mode === "game" && /^[1-4]$/.test(k) && !busy) { pulseK = k; setTimeout(() => { pulseK = null; }, 250); }
+    if (mode === "game" && /^[1-4]$/.test(k) && !busy) squeeze(k);
     key(k);
   }
 });
