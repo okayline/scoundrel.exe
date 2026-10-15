@@ -4,6 +4,12 @@ Newest first. Times are Hawaii time (HST).
 
 ---
 
+## v0.8.7 — "Click Through"
+**Thu Oct 15, 2026 · 10:20 AM HST**
+
+- **Fixed cards ignoring clicks.** A card used to shrink while you held the click, so pressing near its edge could slide it out from under the cursor and the click got lost. Cards no longer move on press; they squeeze once the pick is made.
+- A click made while a move is still going is **held and played** instead of dropped (only if the room is still the same one).
+
 ## v0.8.6 — "Countdown"
 **Wed Oct 14, 2026 · 6:47 AM HST**
 

@@ -5,7 +5,7 @@
 // that draws them wide can never push the line out of place.
 
 const W = 80, IN = W - 4;                     // screen width, and the width inside the frame
-const VERSION = "v0.8.6";
+const VERSION = "v0.8.7";
 const RANK = { 11: "J", 12: "Q", 13: "K", 14: "A" };
 const SUIT = { C: "♣", S: "♠", D: "♦", H: "♥" };
 const KIND = { monster: "DEMON", weapon: "BLADE", potion: "HEALTH" };
@@ -123,7 +123,6 @@ function draw() {
   const box = document.getElementById("nameinput");
   if (box) { if (keepName != null) box.value = keepName; box.focus(); }
   if (pulseK) $screen.querySelectorAll(`[data-k="${pulseK}"]`).forEach((el) => el.classList.add("pulse"));
-  if (downK && mode === "game") $screen.querySelectorAll(`[data-k="${downK}"]`).forEach((el) => el.classList.add("pressed"));
 }
 
 function header(left) {
@@ -752,8 +751,13 @@ async function startRun() {
 }
 
 // k = the slot on the table (0-3), not the card's place in the room list
+let queued = null;   // one card click made while a move was still going: { slot, turn }
 async function take(k) {
-  if (busy || mode !== "game") return;
+  if (mode !== "game") return;
+  // a click that lands mid-move is held, not dropped, and played when the move finishes
+  // (only if the room is the same one: a card's slot means something else in the next room)
+  if (busy) { queued = run && run.view ? { slot: k, turn: run.view.turn } : null; return; }
+  queued = null;
   const v = run.view;
   const i = v.slots ? v.slots[k] : k;
   const c = i == null ? null : v.room[i];
@@ -774,13 +778,16 @@ async function act(action) {
     else if (run.day === T.day) T.run = r; else if (r.status !== "playing") T.unfinished = null;
     bare = false;
     tell(r.events || []);
-    if (r.status !== "playing") { busy = false; draw(); setTimeout(showEnd, 1400); return; }
+    if (r.status !== "playing") { queued = null; busy = false; draw(); setTimeout(showEnd, 1400); return; }
   } catch (e) {
+    queued = null;
     if (e.status === 409) { await loadToday().catch(() => {}); }
     say(S(e.message.toUpperCase(), "demon"));
   }
   busy = false;
   draw();
+  const q = queued; queued = null;
+  if (q && mode === "game" && run.status === "playing" && run.view.turn === q.turn) take(q.slot);
 }
 
 // admins: a fresh deal of today's deck, any time (admin runs don't count anywhere)
@@ -972,18 +979,21 @@ $screen.addEventListener("mouseover", (e) => {
 $screen.addEventListener("mouseleave", () => { if (hoverK) { hoverK = null; draw(); } });
 // The screen redraws every second (and on hover), so a press and a release can land on different
 // elements and the browser drops the click. So act on a press and release over the same key instead.
+// (Nothing redraws or resizes the card on press: a card that shrinks under the cursor can slip out
+// from under it before the release, and the click is lost.)
 let downK = null;
 $screen.addEventListener("pointerdown", (e) => {
   const b = e.target.closest("[data-k]");
   downK = b && !b.classList.contains("off") ? b.dataset.k : null;
-  if (downK && /^[1-4]$/.test(downK)) draw();   // a card pushes in while held
 });
 $screen.addEventListener("pointerup", (e) => {
   const b = e.target.closest("[data-k]");
   const k = b && !b.classList.contains("off") ? b.dataset.k : null;
   const was = downK; downK = null;
-  if (/^[1-4]$/.test(was || "")) draw();         // and pops back out on release
-  if (k && k === was) key(k);
+  if (k && k === was) {
+    if (mode === "game" && /^[1-4]$/.test(k) && !busy) { pulseK = k; setTimeout(() => { pulseK = null; }, 250); }
+    key(k);
+  }
 });
 
 // the clock: redraw each second (but not while typing a name), and a new deck at midnight UTC
