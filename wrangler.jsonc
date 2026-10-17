@@ -19,6 +19,9 @@
       "database_id": "75e13945-0776-4fb0-bbaf-8e89119a7d59"
     }
   ],
+  // save codes and passkeys: the shared Accounts service (the dungeon-items Worker, `Accounts` entrypoint; see its ACCOUNTS.md).
+  // dungeon-items must be deployed first.
+  "services": [{ "binding": "ACCOUNTS", "service": "dungeon-items", "entrypoint": "Accounts" }],
   "vars": {
     // Day #1 of the daily deck (UTC). Share cards say "scoundrel.exe #N".
     "LAUNCH_DAY": "2026-10-14",

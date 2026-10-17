@@ -31,7 +31,45 @@ export function fakeD1() {
 }
 
 const SECRET = "test-secret";
-function makeEnv() { return { DB: fakeD1(), DAILY_SECRET: SECRET, LAUNCH_DAY: utcDay() }; }
+// A stand-in for the shared accounts (the Accounts entrypoint of dungeon-items, tested there): same answers, kept in maps.
+// Codes are random; a "passkey" is any credential { id, account } that was registered. 10 wrong codes per address, then 429.
+export function fakeAccounts() {
+  let n = 0; const codes = new Map(), keys = new Map(), links = new Map(), tries = new Map(), imported = [];
+  const acct = new Set(), err = (error, status = 400) => ({ error, status });
+  const own = (id) => [...codes].filter(([, v]) => v.acct === id);
+  return {
+    imported, codes, links,
+    async createAccount() { acct.add(++n); return { accountId: n }; },
+    async addCode(id) {
+      if (own(id).length >= 5) return err("You have 5 save codes already. Forget one first.");
+      const A31 = "23456789ABCDEFGHJKMNPQRSTUVWXYZ", code = Array.from({ length: 5 }, () => Array.from({ length: 4 }, () => A31[Math.floor(Math.random() * 31)]).join("")).join("-");
+      codes.set(code.replace(/-/g, ""), { acct: id, id: codes.size + 1 }); return { code };
+    },
+    async importCode(id, h) { imported.push([id, h]); return { ok: true }; },
+    async removeCode(id, cid) { const e = [...codes].find(([, v]) => v.acct === id && v.id === cid); if (!e) return err("No such save code.", 404); codes.delete(e[0]); return { ok: true }; },
+    async loginCode({ code, ip }) {
+      const c = (tries.get(ip) || 0) + 1; tries.set(ip, c);
+      if (c > 10) return err("Too many tries. Wait 15 minutes and try again.", 429);
+      const v = codes.get(String(code).toUpperCase().replace(/[^A-Z0-9]/g, "")); return v ? { accountId: v.acct } : err("That save code didn't work. Check it and try again.", 404);
+    },
+    async info(id) { return { codes: own(id).map(([, v]) => ({ id: v.id, created_at: 1, last_used_at: null })), passkeys: [...keys].filter(([, v]) => v.acct === id).map(([k, v]) => ({ id: v.id, label: v.label })), games: [] }; },
+    async waysIn(id) { return own(id).length + [...keys].filter(([, v]) => v.acct === id).length; },
+    async playerFor(id, g) { return { playerId: links.get(id + "|" + g) ?? null }; },
+    async link(id, g, p) {
+      const taken = [...links].find(([k, v]) => k.endsWith("|" + g) && v === p);
+      if (links.has(id + "|" + g)) return { playerId: links.get(id + "|" + g), linked: links.get(id + "|" + g) === p };
+      if (taken) return { playerId: null, linked: false, taken: true };
+      links.set(id + "|" + g, p); return { playerId: p, linked: true };
+    },
+    async accountOf(g, p) { const e = [...links].find(([k, v]) => k.endsWith("|" + g) && v === p); return { accountId: e ? Number(e[0].split("|")[0]) : null }; },
+    async passkeyRegisterOptions({ accountId, origin }) { return { challenge: "c-" + accountId, origin }; },
+    async passkeyRegister({ accountId, credential, label }) { keys.set(credential.id, { acct: accountId, id: keys.size + 1, label }); return { ok: true }; },
+    async passkeyLoginOptions({ origin }) { return { challenge: "login", origin }; },
+    async passkeyLogin({ credential }) { const k = keys.get(credential?.id); return k ? { accountId: k.acct } : err("That passkey isn't saved here.", 400); },
+    async passkeyRemove(id, kid) { const e = [...keys].find(([, v]) => v.acct === id && v.id === kid); if (!e) return err("No such passkey.", 404); keys.delete(e[0]); return { ok: true }; },
+  };
+}
+function makeEnv() { return { DB: fakeD1(), ACCOUNTS: fakeAccounts(), DAILY_SECRET: SECRET, LAUNCH_DAY: utcDay() }; }
 
 // a browser: keeps its cookie
 function browser(env) {
@@ -424,37 +462,37 @@ async function softPasskey() {
   };
 }
 
-test("passkeys: add one on this device, load the player on another, stale or forged answers fail", async () => {
-  const env = makeEnv();
-  const home = browser(env);
-  await home("/api/name", { name: "KURA" });
-  await home("/api/start", {});
-  const key = await softPasskey();
+test("passkeys: added on this device, load the player on another; the crypto is the Accounts service's job", async () => {
+  const env = makeEnv(), home = browser(env);
   const ro = (await home("/api/passkey", { action: "register_options" })).data;
-  assert.equal(ro.rp.name, "scoundrel.exe");
-  assert.equal(ro.user.name, "KURA");
-  const reg = await home("/api/passkey", { action: "register", label: "test phone", credential: key.create(ro) });
-  assert.equal(reg.status, 200, JSON.stringify(reg.data));
+  assert.ok(ro.challenge && ro.origin.startsWith("https://"));          // the site rules (RP ID 88x31.app) belong to the service
+  assert.equal((await home("/api/passkey", { action: "register", label: "test phone", credential: { id: "key1" } })).status, 200);
   assert.equal((await home("/api/account")).data.passkeys.length, 1);
-
   const laptop = browser(env);
-  const lo = (await laptop("/api/passkey", { action: "login_options" })).data;
-  const got = await laptop("/api/passkey", { action: "login", credential: await key.get(lo) });
-  assert.equal(got.status, 200, JSON.stringify(got.data));
-  assert.equal(got.data.name, "KURA");
-  assert.equal((await laptop("/api/today")).data.name, "KURA");
+  assert.equal((await laptop("/api/passkey", { action: "login", credential: { id: "nope" } })).status, 400);
+  assert.equal((await laptop("/api/passkey", { action: "login", credential: { id: "key1" } })).status, 200);
+  assert.equal((await laptop("/api/account")).data.passkeys.length, 1);
+  assert.equal((await browser({ ...env, ACCOUNTS: undefined })("/api/codes", { action: "new" })).status, 503);
+});
 
-  // the same answer can't be used twice (its challenge is used up)
-  const lo2 = (await laptop("/api/passkey", { action: "login_options" })).data;
-  const answer = await key.get(lo2);
-  assert.equal((await browser(env)("/api/passkey", { action: "login", credential: answer })).status, 200);
-  assert.equal((await browser(env)("/api/passkey", { action: "login", credential: answer })).status, 400);
-  // a different key claiming the same credential id fails the signature
-  const fake = await softPasskey();
-  const lo3 = (await laptop("/api/passkey", { action: "login_options" })).data;
-  const forged = await fake.get(lo3);
-  forged.id = answer.id;
-  assert.equal((await browser(env)("/api/passkey", { action: "login", credential: forged })).status, 400);
+test("a save code from before accounts still works once, moves to the account, and the old rows go", async () => {
+  const env = makeEnv(), home = browser(env);
+  await home("/api/codes", { action: "new" });                           // makes player 1 and its account
+  const hash = "ab".repeat(32);
+  env.DB.raw.prepare("INSERT INTO save_codes (player_id, code_hash, created_at) VALUES (1, ?, 1)").run(hash);
+  await home("/api/account");                                            // seeing the player moves the old code over
+  assert.deepEqual(env.ACCOUNTS.imported, [[1, hash]]);
+  assert.equal(env.DB.raw.prepare("SELECT COUNT(*) AS n FROM save_codes").get().n, 0);
+});
+
+test("logging in reuses the account's player here, or links this browser's own", async () => {
+  const env = makeEnv(), a = browser(env);
+  const { code } = (await a("/api/codes", { action: "new" })).data;       // player 1, account 1
+  const other = browser(env);
+  await other("/api/passkey", { action: "register_options" });           // player 2, account 2
+  assert.equal((await other("/api/load", { code })).status, 200);        // account 1 already has player 1 here
+  assert.equal(env.DB.raw.prepare("SELECT COUNT(*) AS n FROM players").get().n, 2);
+  assert.equal(env.ACCOUNTS.links.get("1|scoundrel"), 1);
 });
 
 test("admins: unlimited fresh deals of today's deck; admin runs are never sealed and never ranked", async () => {
