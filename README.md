@@ -1,4 +1,4 @@
-# scoundrel.exe (v0.8.6)
+# scoundrel.exe (v0.8.9)
 
 A daily seeded Scoundrel game: everyone plays the same 44-card deck each UTC day.
 Scoundrel is a solo card game by Zach Gage and Kurt Bieg (2011).
@@ -13,8 +13,8 @@ engine/daily.js       the daily seed (HMAC of the UTC date with a server secret)
 test/                 tests (node --test)
 src/worker.js         the Cloudflare Worker: daily deal, players, moves, leaderboard, ledger
 src/ledger.js         the ledger: one hash chain over every deal, move and finished run
-src/saves.js          save codes, extra devices, rate limits
-src/passkeys.js       passkeys (WebAuthn), no libraries (ported from the 88x31 cLuB)
+src/saves.js          cookie tokens, extra devices, rate limits (save codes and passkeys are the shared
+                      Accounts service in dungeon-items, bound as ACCOUNTS)
 public/index.html     the site: an 80-column text screen (app.js draws it), VT323 font (fonts/OFL.txt)
 migrations/           database changes for an existing database
 schema.sql            database tables (D1)
@@ -97,8 +97,9 @@ npx wrangler d1 execute scoundrel-db --remote --command "DELETE FROM ledger"
 - **Players are a cookie**, no signup. A name is only needed to show up on the leaderboard.
 - **Save codes and passkeys** (PLAYER screen) log you in as the same player on another browser or device.
   [L]OG OUT makes this browser a guest again (only once you have a save code or passkey to get back in).
-  Only hashes of codes and cookie tokens are stored. Code guesses are limited to 10 per 15 minutes.
-  Passkeys belong to the site's address: if the game moves to a new domain, use a save code there.
+  They are shared with the other 88x31.app games (one account, kept by dungeon-items), so a passkey made on
+  any 88x31.app address works here too. Only hashes of codes and cookie tokens are stored. Code guesses are
+  limited to 10 per 15 minutes. Old save codes move to the shared account the first time their player is seen.
   Adding a passkey without a save code nudges you to make one as a backup. Save codes can be downloaded as a .txt.
 - Once a day is over, its seed is public on the leaderboard, so anyone can check the scores.
 - **Free play** is a random deck played only in the browser: never sent to the server, never ranked.
