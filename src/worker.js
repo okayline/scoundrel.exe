@@ -264,15 +264,16 @@ async function move(req, env) {
 // never stops the run: the next finished run's checkpoint covers this one.
 async function checkpoint(env, runId) {
   try {
-    const end = await env.DB.prepare("SELECT id, record FROM ledger WHERE kind = 'run' AND run_id = ?").bind(runId).first();
+    const end = await env.DB.prepare("SELECT l.id, l.record, p.name FROM ledger l LEFT JOIN players p ON p.id = l.player_id WHERE l.kind = 'run' AND l.run_id = ?").bind(runId).first();
     if (!end) return;
     const rows = (await env.DB.prepare("SELECT id, record, prev_hash, hash FROM ledger WHERE id <= ? ORDER BY id").bind(end.id).all()).results;
     const v = await verifyChain(rows);
     if (!v.ok) return console.error("The ledger is broken at entry " + v.at + ": no checkpoint sent.");
-    // the run's end, as sealed (already public on this game's ledger as soon as it's sealed): never the player
+    // the run's end, as sealed (already public on this game's ledger as soon as it's sealed), and the player's leaderboard
+    // name if they picked one: sent beside the record, so the registry shows it but never seals it
     const run = JSON.parse(end.record);
     const detail = { day: dayNumber(run.day, env.LAUNCH_DAY), status: run.status, score: run.score, hp: run.hp, room: run.room, moves: run.moves, demons_left: run.demons_left };
-    const r = await env.REGISTRY.checkpoint({ game: "scoundrel", entries: rows.length, head: rows[rows.length - 1].hash, detail });
+    const r = await env.REGISTRY.checkpoint({ game: "scoundrel", entries: rows.length, head: rows[rows.length - 1].hash, detail, name: end.name ?? null });
     if (r && r.error) console.error("The registry refused the checkpoint: " + r.error);
   } catch (e) { console.error(e); }
 }

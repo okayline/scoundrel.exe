@@ -565,6 +565,15 @@ test("every finished run checkpoints the ledger up to its end in the shared regi
   const end = rows.findIndex((x) => x.kind === "run");
   const rec = JSON.parse(env.DB.raw.prepare("SELECT record FROM ledger WHERE kind = 'run'").get().record);
   assert.deepEqual(env.REGISTRY.checkpoints, [{ game: "scoundrel", entries: end + 1, head: rows[end].hash,
-    detail: { day: 1, status: rec.status, score: rec.score, hp: rec.hp, room: rec.room, moves: rec.moves, demons_left: rec.demons_left } }]);
+    detail: { day: 1, status: rec.status, score: rec.score, hp: rec.hp, room: rec.room, moves: rec.moves, demons_left: rec.demons_left }, name: null }]);
   assert.ok(!JSON.stringify(env.REGISTRY.checkpoints).includes('"player"'));
+});
+
+test("a named player's run checkpoint carries their leaderboard name beside the record", async () => {
+  const env = makeEnv(); const a = browser(env);
+  await a("/api/name", { name: "KURA" });
+  const r = (await a("/api/start", {})).data.run;
+  await playThrough(a, r);
+  assert.equal(env.REGISTRY.checkpoints[0].name, "KURA");
+  assert.ok(!JSON.stringify(env.REGISTRY.checkpoints[0].detail).includes("KURA"));
 });
