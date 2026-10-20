@@ -4,6 +4,14 @@ Newest first. Times are Hawaii time (HST).
 
 ---
 
+## v0.8.12 — "Reroll"
+**Tue Oct 20, 2026 · 3:35 AM HST**
+
+- **Don't like your random name? Reroll it.** Press [R]EROLL next to your name on the PLAYER screen for a new one. You can still type your own with [N]AME.
+- **Admins can switch admin mode off and on** from the PLAYER screen. Off, you play like everyone else and your runs count; switching off throws away your admin runs, which never counted. You can switch it back on before you play that day.
+- **[C]ONTINUE** on the title screen when you have a run going (it was [P] CONTINUE). P still works.
+- Removed: the [P] label on CONTINUE.
+
 ## v0.8.11 — "Name Tag"
 **Tue Oct 20, 2026 · 3:24 AM HST**
 

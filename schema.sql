@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS players (
   created_at  INTEGER NOT NULL,       -- unix seconds
   seen_at     INTEGER NOT NULL,
   tester      INTEGER NOT NULL DEFAULT 0,  -- 1 = unlimited restarts, left off the leaderboard
-  admin       INTEGER NOT NULL DEFAULT 0   -- 1 = can switch tester on and off in the game
+  admin       INTEGER NOT NULL DEFAULT 0   -- 1 = admin mode on (runs don't count), 2 = an admin with it switched off
 );
 
 -- One ranked run per player per UTC day. The deck is never stored: it comes from the day's seed,

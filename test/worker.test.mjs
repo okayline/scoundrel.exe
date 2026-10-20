@@ -243,6 +243,15 @@ test("names: a new player gets a random two-word name; a nameless player from be
   assert.equal(env.DB.raw.prepare("SELECT name FROM players").get().name, again);
 });
 
+test("names: reroll gives a different free two-word name", async () => {
+  const env = makeEnv(); const a = browser(env);
+  const first = (await a("/api/start", {})).data.name;
+  const again = (await a("/api/name", { reroll: true })).data.name;
+  assert.match(again, /^[A-Z][a-z]+ [A-Z][a-z]+$/);
+  assert.notEqual(again, first);
+  assert.equal(env.DB.raw.prepare("SELECT name_key FROM players").get().name_key, again.toLowerCase());
+});
+
 test("names: rules, reserved, unique ignoring case", async () => {
   const env = makeEnv();
   const a = browser(env), b = browser(env);
@@ -508,6 +517,26 @@ test("logging in reuses the account's player here, or links this browser's own",
   assert.equal((await other("/api/load", { code })).status, 200);        // account 1 already has player 1 here
   assert.equal(env.DB.raw.prepare("SELECT COUNT(*) AS n FROM players").get().n, 2);
   assert.equal(env.ACCOUNTS.links.get("1|scoundrel"), 1);
+});
+
+test("admins can switch admin mode off (admin runs are thrown away) and back on before they play", async () => {
+  const env = makeEnv(); const call = browser(env), other = browser(env);
+  await call("/api/name", { name: "KURA" });
+  assert.equal((await other("/api/admin", { on: false })).status, 403);
+  env.DB.raw.prepare("UPDATE players SET admin = 1 WHERE name_key = 'kura'").run();
+  await playThrough(call, (await call("/api/start", {})).data.run);          // an admin run
+  assert.equal((await call("/api/admin", { on: false })).status, 200);
+  assert.equal(env.DB.raw.prepare("SELECT admin FROM players WHERE name_key = 'kura'").get().admin, 2);
+  assert.equal(env.DB.raw.prepare("SELECT COUNT(*) AS n FROM runs").get().n, 0);
+  assert.equal((await call("/api/today")).data.admin, false);
+  assert.equal((await call("/api/account")).data.canAdmin, true);
+  assert.equal((await call("/api/restart", {})).status, 403);
+  await playThrough(call, (await call("/api/start", {})).data.run);          // counts now
+  assert.deepEqual((await other("/api/leaderboard")).data.top.map((r) => r.name), ["KURA"]);
+  assert.equal((await call("/api/admin", { on: true })).status, 400);       // played today
+  env.DB.raw.prepare("DELETE FROM runs").run();
+  assert.equal((await call("/api/admin", { on: true })).status, 200);
+  assert.equal((await call("/api/today")).data.admin, true);
 });
 
 test("admins: unlimited fresh deals of today's deck; admin runs are never sealed and never ranked", async () => {

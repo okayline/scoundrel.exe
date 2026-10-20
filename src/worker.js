@@ -61,6 +61,7 @@ const ROUTES = {
   "POST /api/start": start,
   "POST /api/move": move,
   "POST /api/name": setName,
+  "POST /api/admin": adminSwitch,
   "GET /api/leaderboard": leaderboard,
   "GET /api/share": share,
   "GET /api/history": history,
@@ -112,10 +113,10 @@ async function findPlayer(req, env) {
   const token = readCookie(req);
   if (!token) return null;
   const h = await sha256(token);
-  let p = await env.DB.prepare("SELECT id, name, admin FROM players WHERE token_hash = ?").bind(h).first();
+  let p = await env.DB.prepare("SELECT id, name, admin = 1 AS admin, admin > 0 AS can_admin FROM players WHERE token_hash = ?").bind(h).first();
   if (!p) {
     p = await env.DB.prepare(
-      "SELECT p.id, p.name, p.admin FROM sessions s JOIN players p ON p.id = s.player_id WHERE s.token_hash = ?").bind(h).first();
+      "SELECT p.id, p.name, p.admin = 1 AS admin, p.admin > 0 AS can_admin FROM sessions s JOIN players p ON p.id = s.player_id WHERE s.token_hash = ?").bind(h).first();
     if (p) await env.DB.prepare("UPDATE sessions SET seen_at = ? WHERE token_hash = ?").bind(now(), h).run();
   }
   if (p) await env.DB.prepare("UPDATE players SET seen_at = ? WHERE id = ?").bind(now(), p.id).run();
@@ -282,7 +283,13 @@ async function checkpoint(env, runId) {
 
 async function setName(req, env) {
   const { player, cookie } = await needPlayer(req, env);
-  const name = String((await body(req)).name || "").trim().replace(/\s+/g, " ");
+  const b = await body(req);
+  if (b.reroll) {
+    const p = await giveName(env, player, { reroll: true });
+    if (p.name === player.name) throw new Oops("Couldn't find a free name. Try again.");
+    return json({ name: p.name }, 200, cookie ? { "set-cookie": cookie } : {});
+  }
+  const name = String(b.name || "").trim().replace(/\s+/g, " ");
   if (!NAME_RE.test(name)) throw new Oops("Names are 2 to 16 letters, numbers, spaces, - _ or .");
   const key = name.toLowerCase();
   if (RESERVED.has(key)) throw new Oops("That name is taken.");
@@ -302,11 +309,11 @@ async function leaderboard(req, env, url) {
   const top = await env.DB.prepare(
     `SELECT p.name, r.score, r.status, r.marks, r.finished_at
      FROM runs r JOIN players p ON p.id = r.player_id
-     WHERE r.day = ? AND r.status != 'playing' AND p.name IS NOT NULL AND p.admin = 0
+     WHERE r.day = ? AND r.status != 'playing' AND p.name IS NOT NULL AND p.admin != 1
      ORDER BY r.score DESC, r.finished_at ASC LIMIT 100`).bind(day).all();
   const counts = await env.DB.prepare(
     `SELECT COUNT(*) AS played, SUM(r.status = 'won') AS won, SUM(r.status = 'playing') AS playing
-     FROM runs r JOIN players p ON p.id = r.player_id WHERE r.day = ? AND p.admin = 0`).bind(day).first();
+     FROM runs r JOIN players p ON p.id = r.player_id WHERE r.day = ? AND p.admin != 1`).bind(day).first();
 
   // your own place, named or not
   let you = null;
@@ -315,7 +322,7 @@ async function leaderboard(req, env, url) {
     const mine = await env.DB.prepare("SELECT score, status, finished_at FROM runs WHERE player_id = ? AND day = ?").bind(player.id, day).first();
     if (mine && mine.status !== "playing") {
       const ahead = await env.DB.prepare(
-        `SELECT COUNT(*) AS n FROM runs r JOIN players p ON p.id = r.player_id WHERE r.day = ? AND r.status != 'playing' AND p.admin = 0
+        `SELECT COUNT(*) AS n FROM runs r JOIN players p ON p.id = r.player_id WHERE r.day = ? AND r.status != 'playing' AND p.admin != 1
          AND (r.score > ? OR (r.score = ? AND r.finished_at < ?))`).bind(day, mine.score, mine.score, mine.finished_at).first();
       you = { rank: ahead.n + 1, score: mine.score, status: mine.status, named: !!player.name, admin: !!player.admin };
     }
@@ -389,6 +396,25 @@ async function restart(req, env) {
   return start(req, env);
 }
 
+// Admins only: admin mode on or off. players.admin is 1 (on), 2 (an admin with it off) or 0. Off, you play like
+// anyone else. On is refused once you have a run today (or one from yesterday still going): that run counts.
+// Off throws away your runs that never reached the ledger (admin runs, which never counted), so today starts fresh.
+async function adminSwitch(req, env) {
+  const player = await findPlayer(req, env);
+  if (!player || !player.can_admin) throw new Oops("Only admins can do that.", 403);
+  const on = !!(await body(req)).on, t = utcDay();
+  if (on && !player.admin) {
+    const run = await env.DB.prepare("SELECT 1 AS x FROM runs WHERE player_id = ? AND (day = ? OR (day = ? AND status = 'playing'))")
+      .bind(player.id, t, yesterday(t)).first();
+    if (run) throw new Oops("You've played today, and that run counts. Switch admin on tomorrow, before you play.");
+  }
+  if (!on && player.admin) {
+    await env.DB.prepare("DELETE FROM runs WHERE player_id = ? AND id NOT IN (SELECT run_id FROM ledger WHERE run_id IS NOT NULL)").bind(player.id).run();
+  }
+  await env.DB.prepare("UPDATE players SET admin = ? WHERE id = ?").bind(on ? 1 : 2, player.id).run();
+  return json({ admin: on });
+}
+
 // ---------- save codes and passkeys (kept by the shared Accounts service in dungeon-items) ----------
 // This game keeps its own players and cookie. Save codes and passkeys belong to an account there; the account says
 // which player here is yours (account_players). A player gets an account the first time they make a code or passkey.
@@ -440,7 +466,7 @@ async function account(req, env) {
   const id = await accountFor(env, player);
   const ways = id ? ok(await ACC(env).info(id)) : { codes: [], passkeys: [] };
   const devices = 1 + (await env.DB.prepare("SELECT COUNT(*) AS n FROM sessions WHERE player_id = ?").bind(player.id).first()).n;
-  return json({ player: true, name: player.name, admin: !!player.admin, codes: ways.codes, passkeys: ways.passkeys, devices });
+  return json({ player: true, name: player.name, admin: !!player.admin, canAdmin: !!player.can_admin, codes: ways.codes, passkeys: ways.passkeys, devices });
 }
 
 async function codes(req, env) {

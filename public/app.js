@@ -5,7 +5,7 @@
 // that draws them wide can never push the line out of place.
 
 const W = 80, IN = W - 4;                     // screen width, and the width inside the frame
-const VERSION = "v0.8.11";
+const VERSION = "v0.8.12";
 const RANK = { 11: "J", 12: "Q", 13: "K", 14: "A" };
 const SUIT = { C: "♣", S: "♠", D: "♦", H: "♥" };
 const KIND = { monster: "DEMON", weapon: "BLADE", potion: "HEALTH" };
@@ -193,9 +193,9 @@ function titleScreen() {
   const r = T.run;
   const played = board && board.day === T.day ? board.played : null;
   const stat = (label, value) => ["                        ", S(dots(label), "dim"), value];
-  let go = "[P]LAY";
-  if (r && r.status === "playing" || T.unfinished) go = "[P] CONTINUE";
-  if (r && r.status !== "playing" && !T.unfinished) go = "[P] YOUR RUN";
+  let go = ["[P]LAY", "p"];
+  if (r && r.status === "playing" || T.unfinished) go = ["[C]ONTINUE", "c"];
+  if (r && r.status !== "playing" && !T.unfinished) go = ["[P] YOUR RUN", "p"];
   return ["=", header("SCOUNDREL.EXE"), "=", "~",
     ...LOGO.map((l) => center(S(l, "logo"))), "",
     stat("TODAY'S DECK", deckNo(T.number)),
@@ -205,8 +205,8 @@ function titleScreen() {
     "",
     center(r && r.status !== "playing" ? (r.status === "won" ? "YOU CLEARED TODAY'S DECK." : "TODAY'S DECK GOT YOU.") : "44 CARDS. 20 HP. ONE RUN."),
     "~", "-", ...(guestBox() ? whoRows() : logRows()), "-",
-    T.name ? bar([[go, "p"], ...(freeOpen() ? [["[F]REE PLAY", "f"]] : []), ["[B]OARD", "b"], ["[U]SER", "u"], ["[?]", "?"]])
-      : bar([[go, "p"], ...(freeOpen() ? [["[F]REE PLAY", "f"]] : []), ["[L]OG IN", "l"], ["[B]OARD", "b"], ["[?]", "?"]]),
+    T.name ? bar([go, ...(freeOpen() ? [["[F]REE PLAY", "f"]] : []), ["[B]OARD", "b"], ["[U]SER", "u"], ["[?]", "?"]])
+      : bar([go, ...(freeOpen() ? [["[F]REE PLAY", "f"]] : []), ["[L]OG IN", "l"], ["[B]OARD", "b"], ["[?]", "?"]]),
     "="];
 }
 
@@ -477,8 +477,9 @@ function accountScreen() {
   const rows = [""];
   if (!a) rows.push(S("  Loading...", "dim"));
   else {
-    const flags = a.admin ? "ADMIN" : "";
-    rows.push(stat("NAME", a.name ? a.name + (flags ? `  (${flags})` : "") : S("guest (no name)", "dim")));
+    rows.push(a.name ? ["  ", S(dots("NAME", "", 16), "dim"), a.name, "   ", S("[R]EROLL", "", "r")] : stat("NAME", S("guest (no name)", "dim")));
+    if (a.canAdmin) rows.push(["  ", S(dots("ADMIN", "", 16), "dim"), a.admin ? "ON  (your runs don't count)" : "OFF (you play like anyone)", "   ",
+      S(a.admin ? "[A] TURN OFF" : "[A] TURN ON", "", "a")]);
     rows.push(stat("LOADED ON", a.player ? `${a.devices} browser${a.devices === 1 ? "" : "s"} / device${a.devices === 1 ? "" : "s"}` : S("nothing yet", "dim")));
     rows.push("");
     let n = 0;
@@ -554,6 +555,24 @@ async function openAccount() {
   go("account"); acct = null; forgetArmed = false; draw();
   try { acct = await api("/api/account"); } catch (e) { say(S(e.message.toUpperCase(), "demon")); }
   draw();
+}
+
+async function rerollName() {
+  if (busy) return; busy = true;
+  try { const d = await api("/api/name", { reroll: true }); T.name = acct.name = d.name; say(`You're ${d.name} now.`, "Reroll again any time."); }
+  catch (e) { say(S(e.message.toUpperCase(), "demon")); }
+  busy = false; draw();
+}
+
+// admins: admin mode on (runs don't count, R restarts) or off (play like anyone; today's admin run is thrown away)
+async function switchAdmin(on) {
+  if (busy) return; busy = true;
+  try {
+    await api("/api/admin", { on });
+    await loadToday(); acct = await api("/api/account").catch(() => acct);
+    say(on ? "Admin mode on." : "Admin mode off.", on ? "Your runs don't count. R restarts." : "Today's run counts now.");
+  } catch (e) { say(S(e.message.toUpperCase(), "demon")); }
+  busy = false; draw();
 }
 
 async function makeCode() {
@@ -924,6 +943,8 @@ async function key(k) {
     if (k === "esc") { mode = acctBack; return draw(); }
     if (k === "n") { mode = "name"; back = "account"; nameErr = ""; return draw(); }
     if (k === "s") return makeCode();
+    if (k === "r" && acct && acct.name) return rerollName();
+    if (k === "a" && acct && acct.canAdmin) return switchAdmin(!acct.admin);
     if (k === "k") return addPasskey();
     if (k === "l") return loggedIn() ? logOut() : (mode = "load", draw());
     if (k === "d" && acct && (acct.codes.length || acct.passkeys.length)) { forgetArmed = true; say(S("PRESS THE NUMBER OF THE CODE OR PASSKEY TO DELETE.", "demon"), "Any other key cancels."); return draw(); }
@@ -946,7 +967,7 @@ async function key(k) {
   }
   if (k === "h" || k === "?") { go("help"); return draw(); }
   if (mode === "title") {
-    if (k === "p" || k === "enter") return jackIn();
+    if (k === "p" || k === "c" || k === "enter") return jackIn();
     if (k === "b") { go("board"); return loadBoard(T.day); }
     if (k === "l" && !T.name) return quickLogIn();
     if (k === "u" && T.name) { acctBack = "title"; return openAccount(); }

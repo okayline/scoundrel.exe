@@ -77,7 +77,9 @@ npx wrangler d1 execute scoundrel-db --remote --command "UPDATE players SET admi
 ```
 
 Admins can press [R]ESTART any time for a fresh deal of today's deck, to try the game and its screens.
-Admin runs don't count: they're never on the ledger or the leaderboard. `admin = 0` turns it off.
+Admin runs don't count: they're never on the ledger or the leaderboard. An admin can switch admin mode off and
+on from the PLAYER screen ([A]): off (`admin = 2`) plays like anyone and throws away their admin runs; on again only
+before they've played that day. `admin = 0` makes them not an admin at all.
 
 To wipe the ledger and start it over (it re-seals today's deal on the next player's start or move):
 
