@@ -22,7 +22,7 @@
 
 import * as G from "../engine/scoundrel.js";
 import { dailySeed, utcDay, dayNumber, msUntilNextDay } from "../engine/daily.js";
-import { moveRecord, runRecord, chainInserts, head, ensureDeal, isUnique } from "./ledger.js";
+import { moveRecord, runRecord, chainInserts, head, ensureDeal, isUnique, verifyChain } from "./ledger.js";
 import { hashCode, newSession, rateLimit } from "./saves.js";
 
 const COOKIE = "sx";
@@ -253,8 +253,25 @@ async function move(req, env) {
     if (!res[0].meta.changes) throw new Oops("Out of step. Reload to catch up.", 409);
     break;
   }
+  if (done && !player.admin) await checkpoint(env, run.id);
 
   return json(runView({ ...run, marks }, game, result.events));
+}
+
+// After every finished run, the ledger up to that run's end goes into the shared registry (dungeon-items, bound as
+// REGISTRY) as a checkpoint: its entry count and that entry's fingerprint, which covers every entry before it. The
+// registry is timestamped on Bitcoin, so this ledger is too. Only a chain that checks out is sent. A registry that's away
+// never stops the run: the next finished run's checkpoint covers this one.
+async function checkpoint(env, runId) {
+  try {
+    const end = await env.DB.prepare("SELECT id FROM ledger WHERE kind = 'run' AND run_id = ?").bind(runId).first();
+    if (!end) return;
+    const rows = (await env.DB.prepare("SELECT id, record, prev_hash, hash FROM ledger WHERE id <= ? ORDER BY id").bind(end.id).all()).results;
+    const v = await verifyChain(rows);
+    if (!v.ok) return console.error("The ledger is broken at entry " + v.at + ": no checkpoint sent.");
+    const r = await env.REGISTRY.checkpoint({ game: "scoundrel", entries: rows.length, head: rows[rows.length - 1].hash });
+    if (r && r.error) console.error("The registry refused the checkpoint: " + r.error);
+  } catch (e) { console.error(e); }
 }
 
 async function setName(req, env) {

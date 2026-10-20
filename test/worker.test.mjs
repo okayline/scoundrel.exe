@@ -69,7 +69,9 @@ export function fakeAccounts() {
     async passkeyRemove(id, kid) { const e = [...keys].find(([, v]) => v.acct === id && v.id === kid); if (!e) return err("No such passkey.", 404); keys.delete(e[0]); return { ok: true }; },
   };
 }
-function makeEnv() { return { DB: fakeD1(), ACCOUNTS: fakeAccounts(), DAILY_SECRET: SECRET, LAUNCH_DAY: utcDay() }; }
+// A stand-in for the copy registry's checkpoint call (the Registry entrypoint of dungeon-items, tested there).
+function fakeRegistry() { const checkpoints = []; return { checkpoints, async checkpoint(a) { checkpoints.push(a); return { ok: true, created: true }; } }; }
+function makeEnv() { return { DB: fakeD1(), ACCOUNTS: fakeAccounts(), REGISTRY: fakeRegistry(), DAILY_SECRET: SECRET, LAUNCH_DAY: utcDay() }; }
 
 // a browser: keeps its cookie
 function browser(env) {
@@ -551,4 +553,15 @@ test("the old workers.dev address redirects to the real domain", async () => {
   assert.equal(r.headers.get("location"), "https://scoundrel.88x31.app/api/today?x=1");
   const ok = await worker.fetch(new Request("https://scoundrel.88x31.app/api/today"), env);
   assert.equal(ok.status, 200);
+});
+
+test("every finished run checkpoints the ledger up to its end in the shared registry; moves before that don't", async () => {
+  const env = makeEnv(); const a = browser(env);
+  let r = (await a("/api/start", {})).data.run;
+  r = (await a("/api/move", { day: r.day, n: r.n, action: r.view.legal[0] })).data;
+  assert.equal(env.REGISTRY.checkpoints.length, 0);
+  await playThrough(a, r);
+  const rows = env.DB.raw.prepare("SELECT id, kind, hash FROM ledger ORDER BY id").all();
+  const end = rows.findIndex((x) => x.kind === "run");
+  assert.deepEqual(env.REGISTRY.checkpoints, [{ game: "scoundrel", entries: end + 1, head: rows[end].hash }]);
 });

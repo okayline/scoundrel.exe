@@ -89,6 +89,16 @@ export async function chainInserts(db, prev, entries, guard = null) {
   return stmts;
 }
 
+// Check rows (oldest first) form an unbroken chain from GENESIS: { ok: true } or { ok: false, at: id }.
+export async function verifyChain(rows) {
+  let p = GENESIS;
+  for (const r of rows) {
+    if (r.prev_hash !== p || (await sha256(p + "|" + r.record)) !== r.hash) return { ok: false, at: r.id };
+    p = r.hash;
+  }
+  return { ok: true };
+}
+
 export const isUnique = (e, what) => /UNIQUE/i.test(String(e && e.message)) && (!what || String(e.message).includes(what));
 
 // Seal the day's deal once (the first start or move of the day does it).

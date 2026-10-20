@@ -21,7 +21,11 @@
   ],
   // save codes and passkeys: the shared Accounts service (the dungeon-items Worker, `Accounts` entrypoint; see its ACCOUNTS.md).
   // dungeon-items must be deployed first.
-  "services": [{ "binding": "ACCOUNTS", "service": "dungeon-items", "entrypoint": "Accounts" }],
+  // and the copy registry (same Worker, `Registry` entrypoint): every finished run checkpoints this ledger there.
+  "services": [
+    { "binding": "ACCOUNTS", "service": "dungeon-items", "entrypoint": "Accounts" },
+    { "binding": "REGISTRY", "service": "dungeon-items", "entrypoint": "Registry" }
+  ],
   "vars": {
     // Day #1 of the daily deck (UTC). Share cards say "scoundrel.exe #N".
     "LAUNCH_DAY": "2026-10-14",

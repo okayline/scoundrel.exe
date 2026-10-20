@@ -4,6 +4,11 @@ Newest first. Times are Hawaii time (HST).
 
 ---
 
+## v0.8.10 — "On the Record"
+**Tue Oct 20, 2026 · 2:31 AM HST**
+
+- **Every finished run is now written into the shared item registry** used by all the 88x31.app games: the ledger's length and newest fingerprint, so the registry's hourly Bitcoin timestamp covers this game's ledger too. Nothing about you or your cards goes there. You can see these lines on the registry's ledger page.
+
 ## v0.8.9 — "One Key"
 **Sat Oct 17, 2026 · 2:45 AM HST**
 
