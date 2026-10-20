@@ -31,6 +31,10 @@
     margin: 0; font-family: inherit; line-height: 1.05;
     font-size: clamp(6px, calc((100vw - 32px) / 49), 22px); white-space: pre;
   }
+  @media (max-width: 700px) {   /* phones: the screen fills the width (80 columns of VT323 are 32 text-widths across), as in DDDD */
+    body { padding: 16px 4px; }
+    pre { font-size: calc((100vw - 8px) / 32.5); }
+  }
   /* symbols: always exactly one column, whatever font ends up drawing them */
   .g { display: inline-block; width: 1ch; text-align: center; overflow: visible; line-height: 0;
        font-family: "VT323", "DejaVu Sans Mono", Menlo, Consolas, "Segoe UI Symbol", monospace; }
@@ -67,6 +71,6 @@
     <div class="frame"><pre id="screen" aria-live="polite">LOADING...</pre></div>
     <div id="ver" class="ver"></div>
   </div>
-  <script src="app.js?v=0.8.12" defer></script>
+  <script src="app.js?v=0.8.13" defer></script>
 </body>
 </html>

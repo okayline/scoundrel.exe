@@ -5,7 +5,7 @@
 // that draws them wide can never push the line out of place.
 
 const W = 80, IN = W - 4;                     // screen width, and the width inside the frame
-const VERSION = "v0.8.12";
+const VERSION = "v0.8.13";
 const RANK = { 11: "J", 12: "Q", 13: "K", 14: "A" };
 const SUIT = { C: "♣", S: "♠", D: "♦", H: "♥" };
 const KIND = { monster: "DEMON", weapon: "BLADE", potion: "HEALTH" };
