@@ -5,7 +5,7 @@ Newest first. Times are Hawaii time (HST).
 ---
 
 ## v0.8.10 — "On the Record"
-**Tue Oct 20, 2026 · 2:31 AM HST**
+**Tue Oct 20, 2026 · 2:55 AM HST**
 
 - **Every finished run is now written into the shared item registry** used by all the 88x31.app games: the ledger's length and newest fingerprint, so the registry's hourly Bitcoin timestamp covers this game's ledger too. Each line tells how the run ended: the day, cleared or deleted, HP or the room, demons left, score and moves. If you picked a leaderboard name it shows there too (not sealed into the record); without one you're "A Scoundrel". Your cards and moves stay here. You can see these lines on the registry's ledger page.
 
