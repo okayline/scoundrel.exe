@@ -5,7 +5,7 @@ Newest first. Times are Hawaii time (HST).
 ---
 
 ## v0.8.11 — "Name Tag"
-**Tue Oct 20, 2026 · 3:25 AM HST**
+**Tue Oct 20, 2026 · 3:24 AM HST**
 
 - **Every player now has a name.** New players start with a random two-word one, like the other 88x31 games (Quiet Heron, Lucky Otter), and players without a name get one the next time they visit. Change it any time from your player screen. No more GUEST at the top after logging in.
 - **Removed: the "put your name on the board?" question** after a guest's first run, and the line saying runs without a name don't show. Everyone is on the board now.
