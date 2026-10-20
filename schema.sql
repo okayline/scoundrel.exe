@@ -2,7 +2,7 @@
 --   npx wrangler d1 execute scoundrel-db --remote --file=schema.sql
 
 -- A player is a browser cookie. The cookie holds a random token; only its SHA-256 hash is stored.
--- A name is optional: you only need one to show up on the leaderboard.
+-- Every player has a name: a random two-word one (src/names.js) until they pick their own.
 CREATE TABLE IF NOT EXISTS players (
   id          INTEGER PRIMARY KEY,
   token_hash  TEXT NOT NULL UNIQUE,

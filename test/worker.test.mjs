@@ -213,7 +213,7 @@ test("a full run: score matches the engine, leaderboard, share card, history", a
   assert.equal(t.name, "KURA");
 });
 
-test("leaderboard: unnamed players are counted but not listed; ties go to whoever finished first", async () => {
+test("leaderboard: everyone is listed (a player who never picked a name has a random one); ties go to whoever finished first", async () => {
   const env = makeEnv();
   const named = browser(env);
   await named("/api/name", { name: "First" });
@@ -224,10 +224,23 @@ test("leaderboard: unnamed players are counted but not listed; ties go to whoeve
   await second("/api/name", { name: "Second" });
   await playThrough(second, (await second("/api/start", {})).data.run);
 
+  const random = env.DB.raw.prepare("SELECT name FROM players WHERE name NOT IN ('First', 'Second')").get().name;
   const b = (await anon("/api/leaderboard")).data;
   assert.equal(b.played, 3);
-  assert.deepEqual(b.top.map((r) => r.name), ["First", "Second"]);   // same deck + same bot = same score
-  assert.equal(b.you.named, false);
+  assert.deepEqual(b.top.map((r) => r.name), ["First", random, "Second"]);   // same deck + same bot = same score
+  assert.equal(b.you.named, true);
+});
+
+test("names: a new player gets a random two-word name; a nameless player from before gets one when next seen", async () => {
+  const env = makeEnv(); const a = browser(env);
+  const name = (await a("/api/start", {})).data.name;
+  assert.match(name, /^[A-Z][a-z]+ [A-Z][a-z]+$/);
+  assert.ok(name.length <= 16);
+  assert.equal(env.DB.raw.prepare("SELECT name_key FROM players").get().name_key, name.toLowerCase());
+  env.DB.raw.prepare("UPDATE players SET name = NULL, name_key = NULL").run();
+  const again = (await a("/api/today")).data.name;
+  assert.match(again, /^[A-Z][a-z]+ [A-Z][a-z]+$/);
+  assert.equal(env.DB.raw.prepare("SELECT name FROM players").get().name, again);
 });
 
 test("names: rules, reserved, unique ignoring case", async () => {
@@ -565,7 +578,7 @@ test("every finished run checkpoints the ledger up to its end in the shared regi
   const end = rows.findIndex((x) => x.kind === "run");
   const rec = JSON.parse(env.DB.raw.prepare("SELECT record FROM ledger WHERE kind = 'run'").get().record);
   assert.deepEqual(env.REGISTRY.checkpoints, [{ game: "scoundrel", entries: end + 1, head: rows[end].hash,
-    detail: { day: 1, status: rec.status, score: rec.score, hp: rec.hp, room: rec.room, moves: rec.moves, demons_left: rec.demons_left }, name: null }]);
+    detail: { day: 1, status: rec.status, score: rec.score, hp: rec.hp, room: rec.room, moves: rec.moves, demons_left: rec.demons_left }, name: env.DB.raw.prepare("SELECT name FROM players").get().name }]);
   assert.ok(!JSON.stringify(env.REGISTRY.checkpoints).includes('"player"'));
 });
 

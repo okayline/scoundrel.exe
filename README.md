@@ -94,7 +94,7 @@ npx wrangler d1 execute scoundrel-db --remote --command "DELETE FROM ledger"
 - **The server deals.** The browser only sees the current room, health, weapon and counts, never
   the deck order. Each move is sent to the server, checked by the engine, and saved.
 - **One ranked run a day.** A run started just before midnight can still be finished the next day.
-- **Players are a cookie**, no signup. A name is only needed to show up on the leaderboard.
+- **Players are a cookie**, no signup. Every player starts with a random two-word name (`src/names.js`) and can change it.
 - **Save codes and passkeys** (PLAYER screen) log you in as the same player on another browser or device.
   [L]OG OUT makes this browser a guest again (only once you have a save code or passkey to get back in).
   They are shared with the other 88x31.app games (one account, kept by dungeon-items), so a passkey made on

@@ -24,6 +24,7 @@ import * as G from "../engine/scoundrel.js";
 import { dailySeed, utcDay, dayNumber, msUntilNextDay } from "../engine/daily.js";
 import { moveRecord, runRecord, chainInserts, head, ensureDeal, isUnique, verifyChain } from "./ledger.js";
 import { hashCode, newSession, rateLimit } from "./saves.js";
+import { giveName } from "./names.js";
 
 const COOKIE = "sx";
 const COOKIE_MAX_AGE = 400 * 86400;   // the longest browsers allow
@@ -104,6 +105,7 @@ function readCookie(req) {
 const setCookie = (token) => `${COOKIE}=${token}; Path=/; Max-Age=${COOKIE_MAX_AGE}; HttpOnly; Secure; SameSite=Lax`;
 
 // The player behind this request's cookie, or null. Never creates one (so crawlers don't make players).
+// A player with no name gets a random one here (src/names.js), so players from before random names get one too.
 // A player's first device uses players.token_hash; devices it was loaded on later (save code or passkey)
 // each have a row in sessions.
 async function findPlayer(req, env) {
@@ -117,7 +119,7 @@ async function findPlayer(req, env) {
     if (p) await env.DB.prepare("UPDATE sessions SET seen_at = ? WHERE token_hash = ?").bind(now(), h).run();
   }
   if (p) await env.DB.prepare("UPDATE players SET seen_at = ? WHERE id = ?").bind(now(), p.id).run();
-  return p;
+  return giveName(env, p);
 }
 
 // The player behind this request, made on the spot if there isn't one. Returns { player, cookie? }.
@@ -128,7 +130,7 @@ async function needPlayer(req, env) {
   const t = now();
   const r = await env.DB.prepare("INSERT INTO players (token_hash, created_at, seen_at) VALUES (?, ?, ?) RETURNING id, name, admin")
     .bind(await sha256(token), t, t).first();
-  return { player: r, cookie: setCookie(token) };
+  return { player: await giveName(env, r), cookie: setCookie(token) };
 }
 
 async function body(req) {
@@ -427,7 +429,7 @@ async function enter(req, env, accountId) {
     }
     playerId = ok(await acc.link(accountId, GAME, playerId)).playerId;
   }
-  const p = await env.DB.prepare("SELECT id, name FROM players WHERE id = ?").bind(playerId).first();
+  const p = await giveName(env, await env.DB.prepare("SELECT id, name FROM players WHERE id = ?").bind(playerId).first());
   if (!p) throw new Oops("That player is gone.", 404);
   return { player: p, cookie: setCookie(await newSession(env, p.id)) };
 }

@@ -5,7 +5,7 @@
 // that draws them wide can never push the line out of place.
 
 const W = 80, IN = W - 4;                     // screen width, and the width inside the frame
-const VERSION = "v0.8.10";
+const VERSION = "v0.8.11";
 const RANK = { 11: "J", 12: "Q", 13: "K", 14: "A" };
 const SUIT = { C: "♣", S: "♠", D: "♦", H: "♥" };
 const KIND = { monster: "DEMON", weapon: "BLADE", potion: "HEALTH" };
@@ -459,12 +459,12 @@ function helpScreen() {
 
 function nameScreen() {
   return ["=", spread("SCOUNDREL.EXE   NAME", ""), "=", "", "",
-    center(back === "end" ? "PUT YOUR NAME ON THE BOARD?" : "PICK A NAME FOR THE LEADERBOARD"), "",
+    center("PICK A NAME FOR THE LEADERBOARD"), "",
     center(S("2 to 16 letters, numbers, spaces, - _ .", "dim")), "", "",
     [" ".repeat(25), "NAME: ", { input: true, w: 16, value: T.name || "" }], "",
-    center(nameErr ? S(nameErr.toUpperCase(), "demon") : S("Runs without a name still count, they just don't show.", "dim")),
+    center(nameErr ? S(nameErr.toUpperCase(), "demon") : S("You started with a random one. Change it any time.", "dim")),
     "~", "-", ...logRows(), "-",
-    bar([["[ENTER] SAVE", "enter"], [back === "end" ? "[ESC] NO THANKS" : "[ESC] BACK", "esc"]]), "="];
+    bar([["[ENTER] SAVE", "enter"], ["[ESC] BACK", "esc"]]), "="];
 }
 
 // ---------- account: save codes and passkeys ----------
@@ -856,8 +856,6 @@ async function showEnd() {
     mode = "end"; return draw();
   }
   mode = "end";
-  // a guest who finished: offer to put a name on the board (that names this browser's player)
-  if (!T.name && !T.admin) { mode = "name"; back = "end"; nameErr = ""; }
   draw();
   try { board = await api(`/api/leaderboard?day=${run.day}`); boardDay = run.day; share = await api(`/api/share?day=${run.day}`).catch(() => null); } catch { /* still show the end */ }
   draw();
@@ -877,9 +875,7 @@ async function saveName() {
     const d = await api("/api/name", { name });
     T.name = d.name; nameErr = "";
     say(`You're ${d.name} now.`, "The board will know you.");
-    if (back === "account") { await openAccountBack(); return; }
-    mode = back;
-    if (mode === "end" || mode === "board") { board = await api(`/api/leaderboard?day=${boardDay}`).catch(() => board); }
+    await openAccountBack(); return;
   } catch (e) { nameErr = e.message; }
   draw();
 }
@@ -892,7 +888,7 @@ async function key(k) {
   if (mode === "loading") return;
   if (mode === "name") {
     if (k === "enter") return saveName();
-    if (k === "esc") { nameErr = ""; mode = back === "account" ? "account" : back; return back === "account" ? openAccountBack() : draw(); }
+    if (k === "esc") { nameErr = ""; return openAccountBack(); }
     return;
   }
   if (guestBox()) {
