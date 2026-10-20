@@ -1058,5 +1058,9 @@ setInterval(async () => {
   else say(["A fresh deck is dealt. Everyone gets the same one.", "You get one run at it. No do-overs."], "");
   draw();
   api(`/api/leaderboard?day=${T.day}`).then((b) => { board = b; boardDay = T.day; if (mode === "title") draw(); }).catch(() => {});
-  api("/api/history").then((h) => { everPlayed = h.runs.some((x) => x.status !== "playing"); if (mode === "title") draw(); }).catch(() => {});
+  api("/api/history").then((h) => {
+    everPlayed = h.runs.some((x) => x.status !== "playing");
+    if (mode === "title" && canFree() && !dailyDone() && !log[2]) say(undefined, "New here? Try [F]REE PLAY first. It never counts.");   // a first-timer's one practice run
+    if (mode === "title") draw();
+  }).catch(() => {});
 })();

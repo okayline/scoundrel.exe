@@ -4,11 +4,12 @@ Newest first. Times are Hawaii time (HST).
 
 ---
 
-## v0.8.13 — "Pocket"
-**Tue Oct 20, 2026 · unreleased**
+## v0.8.13 — "Pocket Guide"
+**Tue Oct 20, 2026 · 8:11 AM HST**
 
 - **The screen fills a phone.** On screens under 700px wide the text is about 60% bigger (11.8px on a 390px phone, up from 7.3px), and the screen uses the full width instead of the middle 60%. Desktop is unchanged.
-- Removed: the wide side margins on phones (16px each side, now 4px).
+- **New players are pointed at free play.** If you haven't played before, the title screen says "New here? Try [F]REE PLAY first. It never counts." so your one ranked run isn't spent learning the rules.
+- Removed: the wide side margins on phones (16px each side, now 4px), and the blank third line on a first-timer's title screen.
 
 ## v0.8.12 — "Reroll"
 **Tue Oct 20, 2026 · 3:29 AM HST**
