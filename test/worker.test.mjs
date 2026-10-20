@@ -563,5 +563,8 @@ test("every finished run checkpoints the ledger up to its end in the shared regi
   await playThrough(a, r);
   const rows = env.DB.raw.prepare("SELECT id, kind, hash FROM ledger ORDER BY id").all();
   const end = rows.findIndex((x) => x.kind === "run");
-  assert.deepEqual(env.REGISTRY.checkpoints, [{ game: "scoundrel", entries: end + 1, head: rows[end].hash }]);
+  const rec = JSON.parse(env.DB.raw.prepare("SELECT record FROM ledger WHERE kind = 'run'").get().record);
+  assert.deepEqual(env.REGISTRY.checkpoints, [{ game: "scoundrel", entries: end + 1, head: rows[end].hash,
+    detail: { day: 1, status: rec.status, score: rec.score, hp: rec.hp, room: rec.room, moves: rec.moves, demons_left: rec.demons_left } }]);
+  assert.ok(!JSON.stringify(env.REGISTRY.checkpoints).includes('"player"'));
 });
