@@ -619,3 +619,32 @@ test("a named player's run checkpoint carries their leaderboard name beside the 
   assert.equal(env.REGISTRY.checkpoints[0].name, "KURA");
   assert.ok(!JSON.stringify(env.REGISTRY.checkpoints[0].detail).includes("KURA"));
 });
+
+test("a finished run has a page by its ledger fingerprint: not until its day is over, then everything about it and nothing about the player", async () => {
+  const env = makeEnv(); const a = browser(env), raw = env.DB.raw;
+  await a("/api/name", { name: "KURA" });
+  const r0 = (await a("/api/start", {})).data.run;
+  await playThrough(a, r0);
+  const end = raw.prepare("SELECT id, record, prev_hash, hash FROM ledger WHERE kind = 'run'").get();
+  const page = (h) => a("/api/run?hash=" + h);
+  assert.equal((await page("nothex")).status, 404, "not a fingerprint");
+  assert.equal((await page("0".repeat(64))).status, 404, "no such run");
+  const mv = raw.prepare("SELECT hash FROM ledger WHERE kind = 'move' LIMIT 1").get().hash;
+  assert.equal((await page(mv)).status, 404, "a move's fingerprint isn't a run's page");
+  const early = await page(end.hash);
+  assert.equal(early.status, 404, "the run's day isn't over");
+  assert.match(early.data.error, /when its day ends/);
+  assert.equal(JSON.stringify(early.data).includes("seed"), false);
+
+  const y = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  raw.prepare("UPDATE runs SET day = ?").run(y); raw.prepare("UPDATE ledger SET day = ?").run(y);
+  const res = await page(end.hash.toUpperCase());
+  assert.equal(res.status, 200);
+  const p = res.data, run = raw.prepare("SELECT * FROM runs").get(), rec = JSON.parse(end.record), deal = raw.prepare("SELECT id, record FROM ledger WHERE kind = 'deal'").get();
+  assert.deepEqual([p.day, p.number, p.name, p.status, p.score, p.hp, p.room, p.moves, p.demons_left], [y, 0, "KURA", run.status, run.score, run.health, rec.room, rec.moves, rec.demons_left]);
+  assert.deepEqual([p.rank, p.of, p.startedAt, p.finishedAt, p.marks], [1, 1, run.started_at, run.finished_at, run.marks]);
+  assert.equal(p.seed, await dailySeed(SECRET, y), "a day that is over shows its seed");
+  assert.deepEqual(p.deal, { entry: deal.id, seed_hash: JSON.parse(deal.record).seed_hash });
+  assert.deepEqual(p.ledger, { entry: end.id, record: end.record, prev: end.prev_hash, hash: end.hash });
+  assert.equal("player" in p, false, "no player field beside the sealed record");
+});
