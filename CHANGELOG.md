@@ -4,6 +4,12 @@ Newest first. Times are Hawaii time (HST).
 
 ---
 
+## v0.8.14 — "Run Page"
+**Wed Oct 21, 2026 · 3:50 AM HST**
+
+- **Every finished run has its own page,** once its day is over: `scoundrel.88x31.app/?run=` and the fingerprint of its ledger entry. It shows the result, score, rank that day, HP left, room, moves, demons left, when it started and finished, the route, the deck's seed, the deck's ledger entry, and the run's entry with its record, previous fingerprint and fingerprint. Before the day ends it says the page opens at 00:00 UTC, so nobody's route is shown early.
+- Removed: nothing. The ledger and leaderboard are as they were.
+
 ## v0.8.13 — "Pocket Guide"
 **Tue Oct 20, 2026 · 8:11 AM HST**
 

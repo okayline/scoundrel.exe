@@ -10,6 +10,7 @@
 //   POST /api/move  {day, n, action}   make a move; n = how many moves you've made (stops double-sends)
 //   POST /api/name  {name}          pick a name (needed to show on the leaderboard)
 //   GET  /api/leaderboard?day=      a day's top 100; past days also reveal their seed
+//   GET  /api/run?hash=             one finished run's page, found by its ledger fingerprint; only once its day is over
 //   GET  /api/share?day=            your share card text for a finished run
 //   GET  /api/history               your last 30 runs
 //   GET  /api/ledger?before=&limit=  the ledger, newest first; today's moves by other players are hidden
@@ -63,6 +64,7 @@ const ROUTES = {
   "POST /api/name": setName,
   "POST /api/admin": adminSwitch,
   "GET /api/leaderboard": leaderboard,
+  "GET /api/run": runPage,
   "GET /api/share": share,
   "GET /api/history": history,
   "GET /api/ledger": ledger,
@@ -335,6 +337,32 @@ async function leaderboard(req, env, url) {
     you,
     // once a day is over its seed is public, so anyone can check the deck and the scores
     seed: day < t ? await dailySeed(env.DAILY_SECRET, day) : null,
+  });
+}
+
+// One finished run's page, found by the fingerprint of its "run" ledger entry (the shared registry's checkpoint carries it as
+// `head`). Only once the run's day is over: until then the other players' routes stay hidden, as on the ledger.
+// The name is the leaderboard name; the record is shown as it was sealed (it holds the player's number, as it does on the ledger).
+async function runPage(req, env, url) {
+  const hash = String(url.searchParams.get("hash") || "").toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(hash)) throw new Oops("No such run.", 404);
+  const e = await env.DB.prepare("SELECT id, day, run_id, record, prev_hash, hash FROM ledger WHERE kind = 'run' AND hash = ?").bind(hash).first();
+  if (!e) throw new Oops("No such run.", 404);
+  if (e.day >= utcDay()) throw new Oops("This run's page opens when its day ends, at 00:00 UTC.", 404);
+  const run = await env.DB.prepare("SELECT r.status, r.score, r.health, r.marks, r.started_at, r.finished_at, p.name FROM runs r JOIN players p ON p.id = r.player_id WHERE r.id = ?").bind(e.run_id).first();
+  if (!run) throw new Oops("No such run.", 404);
+  const rec = JSON.parse(e.record);
+  const ahead = await env.DB.prepare(`SELECT COUNT(*) AS n FROM runs r JOIN players p ON p.id = r.player_id WHERE r.day = ?1 AND r.status != 'playing' AND p.admin != 1
+    AND (r.score > ?2 OR (r.score = ?2 AND r.finished_at < ?3))`).bind(e.day, run.score, run.finished_at).first();
+  const of = await env.DB.prepare("SELECT COUNT(*) AS n FROM runs r JOIN players p ON p.id = r.player_id WHERE r.day = ? AND r.status != 'playing' AND p.admin != 1").bind(e.day).first();
+  const d = await env.DB.prepare("SELECT id, record FROM ledger WHERE kind = 'deal' AND day = ?").bind(e.day).first();
+  return json({
+    day: e.day, number: dayNumber(e.day, env.LAUNCH_DAY || e.day),
+    name: run.name, status: run.status, score: run.score, hp: run.health, room: rec.room, moves: rec.moves, demons_left: rec.demons_left,
+    marks: fixMarks(run.marks), rank: ahead.n + 1, of: of.n, startedAt: run.started_at, finishedAt: run.finished_at,
+    seed: await dailySeed(env.DAILY_SECRET, e.day),   // public once the day is over, like the leaderboard's
+    deal: d ? { entry: d.id, seed_hash: JSON.parse(d.record).seed_hash } : null,
+    ledger: { entry: e.id, record: e.record, prev: e.prev_hash, hash: e.hash },
   });
 }
 

@@ -5,7 +5,7 @@
 // that draws them wide can never push the line out of place.
 
 const W = 80, IN = W - 4;                     // screen width, and the width inside the frame
-const VERSION = "v0.8.13";
+const VERSION = "v0.8.14";
 const RANK = { 11: "J", 12: "Q", 13: "K", 14: "A" };
 const SUIT = { C: "♣", S: "♠", D: "♦", H: "♥" };
 const KIND = { monster: "DEMON", weapon: "BLADE", potion: "HEALTH" };
@@ -18,7 +18,7 @@ let run = null;          // the run on screen
 let board = null;        // leaderboard being shown
 let boardDay = null;
 let share = null;        // share text for boardDay (if you finished it)
-let mode = "title";      // title | game | end | board | ledger | help | name | account | newcode | load | loadcode | loading
+let mode = "title";      // title | game | end | board | ledger | run | help | name | account | newcode | load | loadcode | loading
 let back = "title";      // where Esc goes from board/help/name
 let bare = false;        // [B] pressed: the next demon is fought bare-handed
 let between = false;
@@ -118,7 +118,7 @@ function draw() {
   const same = drawnMode === mode;
   const keepName = same ? document.getElementById("nameinput")?.value : null;   // typing survives redraws of the same screen
   drawnMode = mode;
-  const lines = { title: titleScreen, game: gameScreen, end: endScreen, board: boardScreen, ledger: ledgerScreen, help: helpScreen, name: nameScreen,
+  const lines = { title: titleScreen, game: gameScreen, end: endScreen, board: boardScreen, ledger: ledgerScreen, run: runScreen, help: helpScreen, name: nameScreen,
     account: accountScreen, newcode: newCodeScreen, load: loadScreen, loadcode: loadCodeScreen, loading: loadingScreen }[mode]();
   const rows = html(frame(lines));
   const spans = $screen.children;   // one <span class="ln"> per line
@@ -434,6 +434,41 @@ function openLedger() {
   go("ledger"); ledgerPages = [];
   say("Every deal, move and run end, sealed in one hash chain.", "Today's moves by others stay hidden until 00:00 UTC.");
   return loadLedger(null);
+}
+
+// ---------- one finished run's page ----------
+// Opened with ?run=FINGERPRINT (the shared registry links a run's entry here): the run's results, route, the deck's seed, and its ledger entry.
+let runPage = null, runErr = "";
+const utcStamp = (s) => new Date(s * 1000).toLocaleDateString("en-US", { month: "short", day: "2-digit", timeZone: "UTC" }).toUpperCase() + " " + new Date(s * 1000).toISOString().slice(11, 16) + " UTC";
+const chunks = (t, w) => { const out = []; for (let i = 0; i < t.length; i += w) out.push(t.slice(i, i + w)); return out; };
+function runScreen() {
+  const r = runPage, row = (k, v, c) => [S(dots(k, null, 16), "dim"), S(String(v), c || "")];
+  const body = [];
+  if (runErr) body.push(S("  " + runErr, "dim"));
+  else if (!r) body.push(S("  Loading...", "dim"));
+  else {
+    const won = r.status === "won";
+    const marks = r.marks ? [...r.marks] : [];   // the route, spaced like the end screen's, 20 to a row
+    body.push(row("RESULT", won ? "CLEARED" : "DELETED", won ? "gold" : "demon"), row("SCORE", r.score), row("RANK", r.of ? `${r.rank} OF ${r.of}` : "-"),
+      row("HP LEFT", r.hp), row("ROOM", pad2(r.room)), row("MOVES", r.moves), row("DEMONS LEFT", r.demons_left),
+      row("RAN", `${utcStamp(r.startedAt)} - ${r.finishedAt ? utcStamp(r.finishedAt) : "?"}`),
+      row("ROUTE", marks.slice(0, 20).join(" ") || "-", "marks"));
+    for (let i = 20; i < marks.length; i += 20) body.push([" ".repeat(20), S(marks.slice(i, i + 20).join(" "), "marks")]);
+    body.push(row("SEED", r.seed), row("ENTRIES", `deck #${r.deal ? r.deal.entry : "?"}  run #${r.ledger.entry}`));
+    for (const [k, v] of [["RECORD", r.ledger.record], ["PREV", r.ledger.prev], ["HASH", r.ledger.hash]]) {
+      const [first, ...more] = chunks(k + ": " + v, IN);
+      body.push([S(k + ": ", "dim"), first.slice(k.length + 2)], ...more);
+    }
+  }
+  const rows = []; for (let i = 0; i < 17; i++) rows.push(body[i] || "");
+  const name = r ? r.name || "A RUNNER" : "";
+  return ["=", spread(`SCOUNDREL.EXE   RUN   DECK ${r ? deckNo(r.number) : ""}`, name), "=", ...rows, "-", ...logRows(), "-",
+    bar([["[B]OARD", "b", !r], ["[L]EDGER", "l"], ["[R]EGISTRY", "r", !r], ["[ESC] BACK", "esc"]]), "="];
+}
+async function openRun(hash) {
+  mode = "run"; runPage = null; runErr = ""; log = ["", "", ""]; say(["A finished run, from its sealed ledger entry.", "Everything here is public once the day is over."], ""); draw();
+  try { runPage = await api("/api/run?hash=" + hash); } catch (e) { runErr = e.message; }
+  draw();
 }
 
 function helpScreen() {
@@ -957,6 +992,13 @@ async function key(k) {
     if (k === "left" && ledgerPages.length) return loadLedger(ledgerPages.pop());
     return;
   }
+  if (mode === "run") {
+    if (k === "esc") { history.replaceState(null, "", location.pathname); mode = "title"; return draw(); }
+    if (k === "b" && runPage) { go("board"); return loadBoard(runPage.day); }
+    if (k === "l") return openLedger();
+    if (k === "r" && runPage) { window.open("https://88x31.app/registry?head=" + runPage.ledger.hash, "_blank", "noopener"); return; }
+    return;
+  }
   if (mode === "board" && k === "l") return openLedger();
   if (mode === "help" || mode === "board") {
     if (k === "esc" || (k === "h" || k === "?") && mode === "help" || k === "b" && mode === "board") { mode = back; return draw(); }
@@ -1056,7 +1098,8 @@ setInterval(async () => {
   else if (T.run && T.run.status === "playing") say("Your run today is still going.", "The cards are where you left them.");
   else if (T.run) say(`You already ran today's deck. Score ${T.run.score}.`, "A new deck deals at midnight UTC.");
   else say(["A fresh deck is dealt. Everyone gets the same one.", "You get one run at it. No do-overs."], "");
-  draw();
+  const linked = (new URLSearchParams(location.search).get("run") || "").toLowerCase();
+  if (/^[0-9a-f]{64}$/.test(linked)) openRun(linked); else draw();   // ?run=FINGERPRINT (the registry's link) opens that run's page
   api(`/api/leaderboard?day=${T.day}`).then((b) => { board = b; boardDay = T.day; if (mode === "title") draw(); }).catch(() => {});
   api("/api/history").then((h) => {
     everPlayed = h.runs.some((x) => x.status !== "playing");
