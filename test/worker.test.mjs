@@ -578,8 +578,9 @@ test("log out: needs a way back in first; then this browser is a guest and can l
   await phone("/api/load", { code });
   const out = await home("/api/logout", {});
   assert.equal(out.status, 200);
-  assert.match(out.cookie, /Max-Age=0/);
+  assert.match(out.cookie, /^sx=out;/);
   assert.equal((await home("/api/today")).data.name, null);         // guest now
+  assert.equal((await home("/api/name", { name: "X" })).status, 401); // and it can't make a new player until it logs in
   assert.equal((await phone("/api/today")).data.name, "KURA");      // the other device is still in
   // log out of the phone too, then back in on the first browser
   assert.equal((await phone("/api/logout", {})).status, 200);
