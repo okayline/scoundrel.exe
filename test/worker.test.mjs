@@ -75,17 +75,20 @@ function makeEnv() { return { DB: fakeD1(), ACCOUNTS: fakeAccounts(), REGISTRY: 
 
 // a browser: keeps its cookie
 function browser(env) {
-  let cookie = "";
+  const jar = {};
   return async (path, body) => {
+    const cookie = Object.entries(jar).map(([k, v]) => `${k}=${v}`).join("; ");
     const req = new Request("https://scoundrel.example" + path, {
       method: body ? "POST" : "GET",
       headers: { "content-type": "application/json", ...(cookie ? { cookie } : {}) },
       body: body ? JSON.stringify(body) : undefined,
     });
     const res = await worker.fetch(req, env);
-    const set = res.headers.get("set-cookie");
-    if (set) cookie = set.split(";")[0];
-    return { status: res.status, data: await res.json(), cookie: set };
+    for (const c of res.headers.getSetCookie()) {
+      const [k, v] = c.split(";")[0].split("=");
+      if (/Max-Age=0/.test(c)) delete jar[k]; else jar[k] = v;
+    }
+    return { status: res.status, data: await res.json(), cookie: res.headers.get("set-cookie") };
   };
 }
 
@@ -578,15 +581,30 @@ test("log out: needs a way back in first; then this browser is a guest and can l
   await phone("/api/load", { code });
   const out = await home("/api/logout", {});
   assert.equal(out.status, 200);
-  assert.match(out.cookie, /^sx=out;/);
+  assert.match(out.cookie, /^sx=; .*Max-Age=0/);
   assert.equal((await home("/api/today")).data.name, null);         // guest now
-  assert.equal((await home("/api/name", { name: "X" })).status, 401); // and it can't make a new player until it logs in
   assert.equal((await phone("/api/today")).data.name, "KURA");      // the other device is still in
   // log out of the phone too, then back in on the first browser
   assert.equal((await phone("/api/logout", {})).status, 200);
   assert.equal((await phone("/api/today")).data.name, null);
   await home("/api/load", { code });
   assert.equal((await home("/api/today")).data.name, "KURA");
+});
+
+test("logging out goes back to this browser's own player, so it never makes a new one", async () => {
+  const env = makeEnv();
+  const home = browser(env), cafe = browser(env);
+  await home("/api/name", { name: "KURA" });
+  const { code } = (await home("/api/codes", { action: "new" })).data;
+  await cafe("/api/name", { name: "CAFE" });                        // the cafe browser's own player
+  await cafe("/api/load", { code });
+  assert.equal((await cafe("/api/today")).data.name, "KURA");
+  assert.equal((await cafe("/api/logout", {})).status, 200);
+  assert.equal((await cafe("/api/today")).data.name, "CAFE");       // back on its own player
+  await cafe("/api/load", { code });
+  await cafe("/api/logout", {});
+  assert.equal((await cafe("/api/today")).data.name, "CAFE");       // and again
+  assert.equal(env.DB.raw.prepare("SELECT COUNT(*) AS n FROM players").get().n, 2);
 });
 
 test("the old workers.dev address redirects to the real domain", async () => {

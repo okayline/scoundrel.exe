@@ -4,6 +4,12 @@ Newest first. Times are Hawaii time (HST).
 
 ---
 
+## v0.8.15 — "Home Browser"
+**Wed Oct 21, 2026 · 1:05 AM HST**
+
+- **Each browser keeps its own player.** Log in as someone else and then log out, and you're back on the player this browser had, instead of a new one.
+- Removed: v0.8.14's "log in first" after a log out.
+
 ## v0.8.14 — "Log In First"
 **Wed Oct 21, 2026 · 12:50 AM HST**
 

@@ -76,11 +76,14 @@ const ROUTES = {
 
 // ---------- helpers ----------
 
-function json(data, status = 200, headers = {}) {
-  return new Response(JSON.stringify(data), {
+// headers["set-cookie"] may be a list (logging in and out set two cookies)
+function json(data, status = 200, { "set-cookie": cookies, ...headers } = {}) {
+  const res = new Response(JSON.stringify(data), {
     status,
     headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...headers },
   });
+  for (const c of [cookies].flat()) if (c) res.headers.append("set-cookie", c);
+  return res;
 }
 
 const now = () => Math.floor(Date.now() / 1000);
@@ -98,16 +101,17 @@ function newToken() {
   return btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-function readCookie(req) {
-  const m = (req.headers.get("cookie") || "").match(new RegExp(`(?:^|;\\s*)${COOKIE}=([A-Za-z0-9_-]{20,})`));
+function readCookie(req, name = COOKIE) {
+  const m = (req.headers.get("cookie") || "").match(new RegExp(`(?:^|;\\s*)${name}=([A-Za-z0-9_-]{20,})`));
   return m ? m[1] : null;
 }
 
 const setCookie = (token) => `${COOKIE}=${token}; Path=/; Max-Age=${COOKIE_MAX_AGE}; HttpOnly; Secure; SameSite=Lax`;
-// After a log out the cookie says "out" (too short to be a token), so this browser can't make a new player until it
-// logs in again. A browser that never had a cookie still gets one made when it first plays.
-const LOGGED_OUT = setCookie("out");
-const loggedOut = (req) => new RegExp(`(?:^|;\\s*)${COOKIE}=out(?:;|$)`).test(req.headers.get("cookie") || "");
+const clearCookie = (name) => `${name}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`;
+// This browser's own player (one with no save code or passkey), kept while the browser is logged in as someone else, so
+// logging out goes back to it instead of a new player being made every time.
+const HOME = COOKIE + "h";
+const setHome = (token) => `${HOME}=${token}; Path=/; Max-Age=${COOKIE_MAX_AGE}; HttpOnly; Secure; SameSite=Lax`;
 
 // The player behind this request's cookie, or null. Never creates one (so crawlers don't make players).
 // A player with no name gets a random one here (src/names.js), so players from before random names get one too.
@@ -131,7 +135,6 @@ async function findPlayer(req, env) {
 async function needPlayer(req, env) {
   const found = await findPlayer(req, env);
   if (found) return { player: found };
-  if (loggedOut(req)) throw new Oops("You logged out of this browser. Log in with your save code or passkey first.", 401);
   const token = newToken();
   const t = now();
   const r = await env.DB.prepare("INSERT INTO players (token_hash, created_at, seen_at) VALUES (?, ?, ?) RETURNING id, name, admin")
@@ -446,13 +449,15 @@ async function accountFor(env, player, make = false) {
 }
 
 // Log this browser in as the account's player here: the one it already has, else this browser's own player (if it has
-// no account yet), else a new one. Returns { player, cookie }.
+// no account yet), else a new one. If this browser's own player is left behind, it is kept in the HOME cookie for
+// logging out. Returns { player, cookie } (cookie is a list).
 async function enter(req, env, accountId) {
   const acc = ACC(env);
+  const cur = await findPlayer(req, env);
+  const curIsGuest = cur && !(await acc.accountOf(GAME, cur.id)).accountId;
   let { playerId } = await acc.playerFor(accountId, GAME);
   if (!playerId) {
-    const cur = await findPlayer(req, env);
-    if (cur && !(await acc.accountOf(GAME, cur.id)).accountId) playerId = cur.id;
+    if (curIsGuest) playerId = cur.id;
     else {
       if (!(await rateLimit(env, req, "new-player", 20, 3600))) throw new Oops("Too many new players from here. Try again later.", 429);
       const t = now();
@@ -462,7 +467,9 @@ async function enter(req, env, accountId) {
   }
   const p = await giveName(env, await env.DB.prepare("SELECT id, name FROM players WHERE id = ?").bind(playerId).first());
   if (!p) throw new Oops("That player is gone.", 404);
-  return { player: p, cookie: setCookie(await newSession(env, p.id)) };
+  const cookie = [setCookie(await newSession(env, p.id))];
+  if (curIsGuest && cur.id !== p.id) cookie.push(setHome(readCookie(req)));
+  return { player: p, cookie };
 }
 
 async function account(req, env) {
@@ -534,17 +541,19 @@ async function passkey(req, env) {
   throw new Oops("Unknown action.");
 }
 
-// Log out: this browser forgets its player, and won't make a new one until it logs in again. Only once the
-// player has a save code or passkey, so nobody locks themselves out. A device loaded later just loses its session; the first device's token is
-// replaced with one nobody has, so that old cookie stops working too.
+// Log out: this browser forgets its player and goes back to its own (the HOME cookie), if it had one. Only once
+// the player has a save code or passkey, so nobody locks themselves out. A device loaded later just loses its
+// session; the first device's token is replaced with one nobody has, so that old cookie stops working too.
 async function logout(req, env) {
   const player = await findPlayer(req, env);
-  if (!player) return json({ ok: true }, 200, { "set-cookie": LOGGED_OUT });
+  if (!player) return json({ ok: true }, 200, { "set-cookie": [clearCookie(COOKIE), clearCookie(HOME)] });
   const id = await accountFor(env, player);
   const ways = id ? await ACC(env).waysIn(id) : 0;
   if (!ways) throw new Oops("Make a save code or passkey first, or you'd have no way back in.");
   const h = await sha256(readCookie(req));
   const s = await env.DB.prepare("DELETE FROM sessions WHERE token_hash = ?").bind(h).run();
   if (!s.meta.changes) await env.DB.prepare("UPDATE players SET token_hash = ? WHERE id = ? AND token_hash = ?").bind(await sha256(newToken()), player.id, h).run();
-  return json({ ok: true }, 200, { "set-cookie": LOGGED_OUT });
+  const home = readCookie(req, HOME);
+  const back = home && (await env.DB.prepare("SELECT id FROM players WHERE token_hash = ? AND id != ?").bind(await sha256(home), player.id).first());
+  return json({ ok: true }, 200, { "set-cookie": [back ? setCookie(home) : clearCookie(COOKIE), clearCookie(HOME)] });
 }
