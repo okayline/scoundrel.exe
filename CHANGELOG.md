@@ -4,18 +4,6 @@ Newest first. Times are Hawaii time (HST).
 
 ---
 
-## v0.8.15 — "Home Browser"
-**Wed Oct 21, 2026 · 1:05 AM HST**
-
-- **Each browser keeps its own player.** Log in as someone else and then log out, and you're back on the player this browser had, instead of a new one.
-- Removed: v0.8.14's "log in first" after a log out.
-
-## v0.8.14 — "Log In First"
-**Wed Oct 21, 2026 · 12:50 AM HST**
-
-- **After you log out, playing asks you to log in first.** A browser that logged out no longer makes a new empty player when you start a run or reroll a name; it says to log in with your save code or passkey. A browser that has never played still gets a player the first time.
-- Removed: a new empty player every time you played after logging out.
-
 ## v0.8.13 — "Pocket Guide"
 **Tue Oct 20, 2026 · 8:11 AM HST**
 

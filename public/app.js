@@ -5,7 +5,7 @@
 // that draws them wide can never push the line out of place.
 
 const W = 80, IN = W - 4;                     // screen width, and the width inside the frame
-const VERSION = "v0.8.15";
+const VERSION = "v0.8.13";
 const RANK = { 11: "J", 12: "Q", 13: "K", 14: "A" };
 const SUIT = { C: "♣", S: "♠", D: "♦", H: "♥" };
 const KIND = { monster: "DEMON", weapon: "BLADE", potion: "HEALTH" };
@@ -669,7 +669,7 @@ async function logOut() {
     await api("/api/logout", {});
     await loadToday();
     board = null; run = T.unfinished || T.run; acct = null; mode = "title"; back = "title";
-    say("Logged out.", "PLAYER, [L]OG IN to come back.");
+    say("Logged out. This browser is a guest now.", "PLAYER, [L]OG IN to come back.");
     api(`/api/leaderboard?day=${T.day}`).then((b) => { board = b; boardDay = T.day; if (mode === "title") draw(); }).catch(() => {});
   } catch (e) { say(S(e.message.toUpperCase(), "demon")); }
   busy = false; draw();
