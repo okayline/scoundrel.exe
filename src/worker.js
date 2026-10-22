@@ -23,7 +23,7 @@
 
 import * as G from "../engine/scoundrel.js";
 import { dailySeed, utcDay, dayNumber, msUntilNextDay } from "../engine/daily.js";
-import { moveRecord, runRecord, chainInserts, head, ensureDeal, isUnique, verifyChain } from "./ledger.js";
+import { moveRecord, runRecord, chainInserts, head, ensureDeal, isUnique, verifyTip } from "./ledger.js";
 import { hashCode, newSession, rateLimit } from "./saves.js";
 import { giveName } from "./names.js";
 
@@ -265,20 +265,21 @@ async function move(req, env) {
 
 // After every finished run, the ledger up to that run's end goes into the shared registry (dungeon-items, bound as
 // REGISTRY) as a checkpoint: its entry count and that entry's fingerprint, which covers every entry before it. The
-// registry is timestamped on Bitcoin, so this ledger is too. Only a chain that checks out is sent. A registry that's away
-// never stops the run: the next finished run's checkpoint covers this one.
+// registry is timestamped on Bitcoin, so this ledger is too. Only an entry that checks out is sent (verifyTip reads it and
+// the one before it, so this costs the same however long the ledger is; entries are never deleted, so an entry's id is the
+// count up to it). A registry that's away never stops the run: the next finished run's checkpoint covers this one.
 async function checkpoint(env, runId) {
   try {
     const end = await env.DB.prepare("SELECT l.id, l.record, p.name FROM ledger l LEFT JOIN players p ON p.id = l.player_id WHERE l.kind = 'run' AND l.run_id = ?").bind(runId).first();
     if (!end) return;
-    const rows = (await env.DB.prepare("SELECT id, record, prev_hash, hash FROM ledger WHERE id <= ? ORDER BY id").bind(end.id).all()).results;
-    const v = await verifyChain(rows);
+    const rows = (await env.DB.prepare("SELECT id, record, prev_hash, hash FROM ledger WHERE id <= ? ORDER BY id DESC LIMIT 2").bind(end.id).all()).results.reverse();
+    const v = await verifyTip(rows);
     if (!v.ok) return console.error("The ledger is broken at entry " + v.at + ": no checkpoint sent.");
     // the run's end, as sealed (already public on this game's ledger as soon as it's sealed), and the player's leaderboard
     // name if they picked one: sent beside the record, so the registry shows it but never seals it
     const run = JSON.parse(end.record);
     const detail = { day: dayNumber(run.day, env.LAUNCH_DAY), status: run.status, score: run.score, hp: run.hp, room: run.room, moves: run.moves, demons_left: run.demons_left };
-    const r = await env.REGISTRY.checkpoint({ game: "scoundrel", entries: rows.length, head: rows[rows.length - 1].hash, detail, name: end.name ?? null });
+    const r = await env.REGISTRY.checkpoint({ game: "scoundrel", entries: end.id, head: rows[rows.length - 1].hash, detail, name: end.name ?? null });
     if (r && r.error) console.error("The registry refused the checkpoint: " + r.error);
   } catch (e) { console.error(e); }
 }

@@ -4,6 +4,11 @@ Newest first. Times are Hawaii time (HST).
 
 ---
 
+## v0.8.15 — "Light Check"
+**Wed Oct 21, 2026 · 7:50 PM HST**
+
+- Sending a finished run to the shared registry reads only that run's ledger entry and the one before it. Removed: reading and re-checking the whole ledger after every finished run, which got slower with every run (the ledger itself is unchanged).
+
 ## v0.8.14 — "Run Page"
 **Wed Oct 21, 2026 · 3:50 AM HST**
 
