@@ -73,6 +73,8 @@ const ROUTES = {
   "POST /api/codes": codes,
   "POST /api/load": loadCode,
   "POST /api/logout": logout,
+  "GET /api/copies": copies,
+  "POST /api/pin": pinCopy,
   "POST /api/passkey": passkey,
 };
 
@@ -595,4 +597,22 @@ async function markCarry(env, playerId, value, key) {
     const r = await env.REGISTRY.markCarried({ itemId: c.itemId, copy: c.copy, by: { game: GAME, playerId }, kind: "deed", value, key });
     if (r && r.error) console.error("The registry refused the mark: " + r.error);
   } catch (e) { console.error(e); }
+}
+
+// The picker (account panel): every copy your account holds in any game, newest first, and pinning one of them to carry.
+//   GET  /api/copies              { copies: [{ itemId, copy, name, game, pinned }] } (up to 50)
+//   POST /api/pin {itemId, copy}  pin it: every game carries it from your next run
+async function copies(req, env) {
+  const player = await findPlayer(req, env);
+  if (!player || !env.REGISTRY || !env.REGISTRY.heldAcross) return json({ copies: [] });
+  const list = await env.REGISTRY.heldAcross(GAME, player.id, 50);
+  return json({ copies: list.map((c) => ({ itemId: c.itemId, copy: c.copy, name: c.item.name, game: c.game, pinned: c.pinned })) });
+}
+async function pinCopy(req, env) {
+  const player = await findPlayer(req, env);
+  if (!player) throw new Oops("Make a save code or passkey first.", 401);
+  const b = await body(req);
+  const r = await env.REGISTRY.pin({ game: GAME, playerId: player.id, itemId: Number(b.itemId), copy: Number(b.copy) });
+  if (r && r.error) throw new Oops(r.error);
+  return json({ ok: true });
 }

@@ -662,3 +662,15 @@ test("the carried copy: today shows your pinned copy until the run is over; a cl
   assert.deepEqual(marked, end.status === "won" ? [{ itemId: 4, copy: 2, by: { game: "scoundrel", playerId: pid }, kind: "deed", value: "cleared_deck", key: "run:" + id }] : []);
   assert.equal((await a("/api/today")).data.carry, null);
 });
+
+test("the CARRY picker: lists the account's copies and pins one", async () => {
+  const env = makeEnv(); const a = browser(env), pins = [];
+  Object.assign(env.REGISTRY, {
+    async heldAcross() { return [{ itemId: 4, copy: 2, game: "4dungeon", pinned: false, item: { name: "a lamp" } }]; },
+    async pin(p) { pins.push(p); return { ok: true }; },
+  });
+  await a("/api/start", {});
+  assert.deepEqual((await a("/api/copies")).data.copies, [{ itemId: 4, copy: 2, name: "a lamp", game: "4dungeon", pinned: false }]);
+  assert.equal((await a("/api/pin", { itemId: 4, copy: 2 })).status, 200);
+  assert.deepEqual(pins, [{ game: "scoundrel", playerId: env.DB.raw.prepare("SELECT id FROM players").get().id, itemId: 4, copy: 2 }]);
+});
