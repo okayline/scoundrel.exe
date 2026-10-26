@@ -600,13 +600,16 @@ async function markCarry(env, playerId, value, key) {
 }
 
 // The carry window ([C]ARRY in PLAYER): the registry's own page of every copy your account holds in any game, in
-// scoundrel.exe's frame (dungeon-items carry-window.js). Its buttons pin through POST /api/pin.
+// scoundrel.exe's frame (dungeon-items carry-window.js). Its buttons pin through POST /api/pin. (v0.9.2) It also holds the
+// save codes and passkeys and logging in and out (the routes above), which PLAYER no longer shows.
 //   GET  /api/carry               the window, as a page
 //   POST /api/pin {itemId, copy}  pin it: every game carries it from your next run
 async function carryPage(req, env) {
   const player = await findPlayer(req, env);
   if (!env.REGISTRY || !env.REGISTRY.carryWindow) throw new Oops("The registry is unavailable right now. Try again in a moment.", 503);
-  const html = await env.REGISTRY.carryWindow({ game: GAME, playerId: player ? player.id : 0, pinUrl: "/api/pin", back: "/",
+  const id = player ? await accountFor(env, player) : null;   // (v0.9.2) the window also shows save codes and passkeys
+  const ways = { player: !!player, ...(id ? ok(await ACC(env).info(id)) : { codes: [], passkeys: [] }) };
+  const html = await env.REGISTRY.carryWindow({ game: GAME, playerId: player ? player.id : 0, pinUrl: "/api/pin", back: "/", ways,
     frame: { title: "SCOUNDREL.EXE   CARRY", paper: "#07090a", ink: "#e4e4df", edge: "#8f8f8a", accent: "#e3b341", font: '"VT323", ui-monospace, monospace' } });
   return new Response(html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
 }

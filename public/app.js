@@ -18,7 +18,7 @@ let run = null;          // the run on screen
 let board = null;        // leaderboard being shown
 let boardDay = null;
 let share = null;        // share text for boardDay (if you finished it)
-let mode = "title";      // title | game | end | board | ledger | run | help | name | account | newcode | load | loadcode | loading
+let mode = "title";      // title | game | end | board | ledger | run | help | name | account | loading
 let back = "title";      // where Esc goes from board/help/name
 let bare = false;        // [B] pressed: the next demon is fought bare-handed
 let between = false;
@@ -41,9 +41,6 @@ let ledgerPages = [];    // the "before" of each newer page, for going back up
 let ledgerBefore = null; // this page: entries before this id (null = the newest)
 let hoverK = null;        // the card (1-4) the mouse is over: it gets a little v above it
 let acct = null;         // /api/account, on the account screen
-let newCode = null;      // a save code just made (shown once)
-let logoutArmed = false; // player screen: L twice logs out
-let forgetArmed = false; // account screen: D, then a number, deletes that code or passkey
 
 // ---------- small helpers ----------
 
@@ -119,7 +116,7 @@ function draw() {
   const keepName = same ? document.getElementById("nameinput")?.value : null;   // typing survives redraws of the same screen
   drawnMode = mode;
   const lines = { title: titleScreen, game: gameScreen, end: endScreen, board: boardScreen, ledger: ledgerScreen, run: runScreen, help: helpScreen, name: nameScreen,
-    account: accountScreen, newcode: newCodeScreen, load: loadScreen, loadcode: loadCodeScreen, loading: loadingScreen }[mode]();
+    account: accountScreen, loading: loadingScreen }[mode]();
   const rows = html(frame(lines));
   const spans = $screen.children;   // one <span class="ln"> per line
   if (same && spans.length === rows.length) {
@@ -518,81 +515,20 @@ function accountScreen() {
     if (a.canAdmin) rows.push(["  ", S(dots("ADMIN", "", 16), "dim"), a.admin ? "ON  (your runs don't count)" : "OFF (you play like anyone)", "   ",
       S(a.admin ? "[A] TURN OFF" : "[A] TURN ON", "", "a")]);
     rows.push(stat("LOADED ON", a.player ? `${a.devices} browser${a.devices === 1 ? "" : "s"} / device${a.devices === 1 ? "" : "s"}` : S("nothing yet", "dim")));
-    rows.push("");
-    let n = 0;
-    rows.push(S(`  SAVE CODES  ${a.codes.length} of 5`, "dim"));
-    if (!a.codes.length) rows.push(S("     none yet", "dim"));
-    for (const c of a.codes) rows.push(`  ${String(++n).padStart(2)}  code made ${md(c.created_at)}${c.last_used_at ? ` · last used ${md(c.last_used_at)}` : " · never used"}`);
-    rows.push("");
-    rows.push(S(`  PASSKEYS  ${a.passkeys.length}`, "dim"));
-    if (!a.passkeys.length) rows.push(S("     none yet", "dim"));
-    for (const k of a.passkeys) rows.push(`  ${String(++n).padStart(2)}  ${fit(k.label || "passkey", 16)} · made ${md(k.created_at)}${k.last_used_at ? ` · last used ${md(k.last_used_at)}` : ""}`);
   }
   rows.push("~");
-  rows.push(S("  A save code or passkey lets you log in as this player on any browser or", "dim"));
-  rows.push(S("  device: on that one, open PLAYER and press [L]OG IN.", "dim"));
+  rows.push(S("  [C]ARRY: save codes, passkeys, logging in, and the copy you carry into every game.", "dim"));
   return ["=", spread("SCOUNDREL.EXE   PLAYER", ""), "=", ...rows, "-", ...logRows(), "-",
-    bar([["[N]AME", "n"], ["[C]ARRY", "c"], ["[S]AVE CODE", "s"], ["PASS[K]EY", "k"], ["[D]ELETE", "d", !(acct && (acct.codes.length || acct.passkeys.length)), forgetArmed],
-      [loggedIn() ? "[L]OG OUT" : "[L]OG IN", "l", false, logoutArmed], ["[ESC] BACK", "esc"]]),
+    bar([["[N]AME", "n"], ["[C]ARRY", "c"], ["[ESC] BACK", "esc"]]),
     "="];
 }
 
 // (v0.9) CARRY. (v0.9.1) [C]ARRY opens the registry's carry window (/api/carry), the same window every game opens:
-// every copy your account holds in any game, and the one you carry on top.
-
-function newCodeScreen() {
-  return ["=", spread("SCOUNDREL.EXE   SAVE CODE", ""), "=", "~",
-    center("YOUR NEW SAVE CODE"), "",
-    center(S(newCode || "", "you")), "",
-    center(S("Write it down or keep it in a password manager. It won't be shown again.", "dim")),
-    center(S("Anyone with this code can load your player, so keep it to yourself.", "dim")),
-    "~", "-", ...logRows(), "-",
-    bar([["[C]OPY", "c"], ["[D]OWNLOAD .TXT", "d"], ["[ESC] DONE", "esc"]]), "="];
-}
-
-function loadScreen() {
-  return ["=", spread("SCOUNDREL.EXE   LOG IN", ""), "=", "~",
-    center("LOG IN AS YOUR PLAYER"), "",
-    center(S("Use a save code or a passkey you made before.", "dim")),
-    "~", "-", ...logRows(), "-",
-    bar([["[C]ODE", "c"], ["PASS[K]EY", "k", !pkSupported()], ["[ESC] BACK", "esc"]]), "="];
-}
-
-function loadCodeScreen() {
-  return ["=", spread("SCOUNDREL.EXE   LOG IN", ""), "=", "~",
-    center("TYPE YOUR SAVE CODE"), "", "",
-    [" ".repeat(20), "CODE: ", { input: true, w: 24, max: 29 }], "",
-    center(nameErr ? S(nameErr.toUpperCase(), "demon") : S("Dashes and spaces don't matter.", "dim")),
-    "~", "-", ...logRows(), "-",
-    bar([["[ENTER] LOG IN", "enter"], ["[ESC] BACK", "esc"]]), "="];
-}
-
-// the save code as a little text file, so it can be kept somewhere safe
-function downloadCode() {
-  const who = T.name || "your player";
-  const text = [
-    "scoundrel.exe save code",
-    "",
-    `  ${newCode}`,
-    "",
-    `This code logs you in as ${who} on any browser or device.`,
-    `On that one: open ${location.origin}, press P (PLAYER), L (LOG IN), C (CODE), and type it in.`,
-    "Keep it private: anyone with this code can log in as you.",
-    `Made ${new Date().toISOString().slice(0, 10)}.`,
-    "",
-  ].join("\r\n");
-  try {
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
-    a.download = `scoundrel-save-code${T.name ? "-" + T.name.toLowerCase().replace(/[^a-z0-9]+/g, "-") : ""}.txt`;
-    document.body.append(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-    say("Save code downloaded as a .txt file.", "Keep it somewhere safe.");
-  } catch { say("Couldn't download. Copy it or write it down instead.", ""); }
-}
+// every copy your account holds in any game, and the one you carry on top. (v0.9.2) It also holds the save codes and
+// passkeys, and logging in and out, which used to be screens here.
 
 async function openAccount() {
-  go("account"); acct = null; forgetArmed = false; draw();
+  go("account"); acct = null; draw();
   try { acct = await api("/api/account"); } catch (e) { say(S(e.message.toUpperCase(), "demon")); }
   draw();
 }
@@ -615,118 +551,6 @@ async function switchAdmin(on) {
   busy = false; draw();
 }
 
-async function makeCode() {
-  if (busy) return; busy = true;
-  try { newCode = (await api("/api/codes", { action: "new" })).code; mode = "newcode"; say("Save code made.", "Keep it safe."); }
-  catch (e) { say(S(e.message.toUpperCase(), "demon")); }
-  busy = false; draw();
-}
-
-// The browser speaks WebAuthn in ArrayBuffers; the server speaks base64url. (From the 88x31 cLuB.)
-const pkSupported = () => !!(window.PublicKeyCredential && navigator.credentials && navigator.credentials.create);
-const fromB64 = (s) => { const t = s.replace(/-/g, "+").replace(/_/g, "/"); return Uint8Array.from(atob(t + "===".slice((t.length + 3) % 4)), (c) => c.charCodeAt(0)).buffer; };
-const toB64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-const deviceName = () => {
-  const u = navigator.userAgent;
-  return /iPhone/.test(u) ? "iPhone" : /iPad/.test(u) ? "iPad" : /Android/.test(u) ? "Android" : /Mac/.test(u) ? "Mac" : /Windows/.test(u) ? "Windows PC" : /Linux/.test(u) ? "Linux" : "this device";
-};
-const pkOops = (e) => (e && e.name === "NotAllowedError" ? "Passkey cancelled (or it timed out)." : e && e.name === "InvalidStateError" ? "This device already has a passkey for you!" : (e && e.message) || "The passkey didn't work.");
-
-async function addPasskey() {
-  if (busy) return;
-  if (!pkSupported()) { say(S("THIS BROWSER CAN'T DO PASSKEYS.", "demon"), "A save code works everywhere."); return draw(); }
-  busy = true;
-  say("Waiting for your fingerprint, face or PIN...", ""); draw();
-  try {
-    const o = await api("/api/passkey", { action: "register_options" });
-    const cred = await navigator.credentials.create({ publicKey: {
-      ...o, challenge: fromB64(o.challenge), user: { ...o.user, id: fromB64(o.user.id) },
-      excludeCredentials: o.excludeCredentials.map((c) => ({ ...c, id: fromB64(c.id) })),
-    } });
-    await api("/api/passkey", { action: "register", label: deviceName(), credential: {
-      id: cred.id, response: { clientDataJSON: toB64(cred.response.clientDataJSON), attestationObject: toB64(cred.response.attestationObject) },
-    } });
-    acct = await api("/api/account").catch(() => acct);
-    // passkeys only work on this site's address: a save code is the backup if that ever changes
-    if (acct && !acct.codes.length) say("Passkey saved.", "Make a [S]AVE CODE too, as a backup.");
-    else say("Passkey saved.", "On another device: PLAYER, [L]OG IN, PASS[K]EY.");
-  } catch (e) { say(S(pkOops(e).toUpperCase(), "demon")); }
-  busy = false; draw();
-}
-
-let loginBack = "load";  // where Esc goes from the code box
-async function quickLogIn() {
-  loginBack = "title";
-  if (!pkSupported()) { nameErr = ""; mode = "loadcode"; return draw(); }
-  const ok = await loadWithPasskey();
-  if (!ok) { nameErr = ""; mode = "loadcode"; draw(); }
-}
-
-async function loadWithPasskey() {
-  if (busy || !pkSupported()) return false;
-  busy = true;
-  say("Waiting for your passkey...", ""); draw();
-  try {
-    const o = await api("/api/passkey", { action: "login_options" });
-    const cred = await navigator.credentials.get({ publicKey: { ...o, challenge: fromB64(o.challenge) } });
-    const d = await api("/api/passkey", { action: "login", credential: {
-      id: cred.id, response: { clientDataJSON: toB64(cred.response.clientDataJSON), authenticatorData: toB64(cred.response.authenticatorData),
-        signature: toB64(cred.response.signature) },
-    } });
-    await loaded(d.name);
-    busy = false; draw(); return true;
-  } catch (e) { say(S(pkOops(e).toUpperCase(), "demon")); }
-  busy = false; draw(); return false;
-}
-
-async function loadWithCode() {
-  const box = document.getElementById("nameinput");
-  try { const d = await api("/api/load", { code: box ? box.value : "" }); nameErr = ""; await loaded(d.name); }
-  catch (e) { nameErr = e.message; }
-  draw();
-}
-
-// this browser is now another player: start over from the title with their stuff
-async function loaded(name) {
-  await loadToday();
-  board = null; run = T.unfinished || T.run; mode = "title"; back = "title";
-  say(`Logged in as ${name || "your player"}.`, "Welcome back.");
-  api(`/api/leaderboard?day=${T.day}`).then((b) => { board = b; boardDay = T.day; if (mode === "title") draw(); }).catch(() => {});
-}
-
-// logged in = this browser has a player with a name or a way back in (a guest just has runs)
-const loggedIn = () => !!(acct && acct.player && (acct.name || acct.codes.length || acct.passkeys.length));
-
-async function logOut() {
-  if (busy) return;
-  if (!(acct.codes.length || acct.passkeys.length)) {
-    say(S("MAKE A SAVE CODE OR PASSKEY FIRST.", "demon"), "Otherwise there'd be no way back in.");
-    return draw();
-  }
-  if (!logoutArmed) { logoutArmed = true; say(S("LOG OUT? PRESS L AGAIN.", "demon"), "Log back in any time with your save code or passkey."); return draw(); }
-  logoutArmed = false; busy = true;
-  try {
-    await api("/api/logout", {});
-    await loadToday();
-    board = null; run = T.unfinished || T.run; acct = null; mode = "title"; back = "title";
-    say("Logged out. This browser is a guest now.", "PLAYER, [L]OG IN to come back.");
-    api(`/api/leaderboard?day=${T.day}`).then((b) => { board = b; boardDay = T.day; if (mode === "title") draw(); }).catch(() => {});
-  } catch (e) { say(S(e.message.toUpperCase(), "demon")); }
-  busy = false; draw();
-}
-
-async function forget(i) {
-  const list = [...acct.codes.map((c) => ["codes", c.id]), ...acct.passkeys.map((k) => ["passkey", k.id])];
-  const item = list[i - 1];
-  forgetArmed = false;
-  if (!item) return draw();
-  try {
-    await api(`/api/${item[0]}`, { action: "remove", id: item[1] });
-    say(item[0] === "codes" ? "Save code deleted. It won't load this player anymore." : "Passkey deleted here.", item[0] === "codes" ? "" : "You can delete it from that device's passwords too.");
-    acct = await api("/api/account");
-  } catch (e) { say(S(e.message.toUpperCase(), "demon")); }
-  draw();
-}
 
 function loadingScreen() {
   return ["=", "SCOUNDREL.EXE", "=", "~", center("DIALING IN..."), "~", "="];
@@ -959,36 +783,12 @@ async function key(k) {
     if (k === "a") { acctBack = "title"; return openAccount(); }
     return;
   }
-  if (mode === "loadcode") {
-    if (k === "enter") return loadWithCode();
-    if (k === "esc") { nameErr = ""; mode = loginBack; loginBack = "load"; return draw(); }
-    return;
-  }
-  if (mode === "load") {
-    if (k === "c") { nameErr = ""; loginBack = "load"; mode = "loadcode"; return draw(); }
-    if (k === "k") return loadWithPasskey();
-    if (k === "esc") return openAccountBack();
-    return;
-  }
-  if (mode === "newcode") {
-    if (k === "c") { try { await navigator.clipboard.writeText(newCode); say("Copied. Paste it somewhere safe.", ""); } catch { say("Couldn't copy. Write it down instead.", ""); } return draw(); }
-    if (k === "d") { downloadCode(); return draw(); }
-    if (k === "esc" || k === "enter") { newCode = null; return openAccountBack(); }
-    return;
-  }
   if (mode === "account") {
-    if (forgetArmed && /^[1-9]$/.test(k)) return forget(Number(k));
-    forgetArmed = false;
-    if (k !== "l") logoutArmed = false;
     if (k === "esc") { mode = acctBack; return draw(); }
     if (k === "n") { mode = "name"; back = "account"; nameErr = ""; return draw(); }
     if (k === "c") { location.href = "/api/carry"; return; }
-    if (k === "s") return makeCode();
     if (k === "r" && acct && acct.name) return rerollName();
     if (k === "a" && acct && acct.canAdmin) return switchAdmin(!acct.admin);
-    if (k === "k") return addPasskey();
-    if (k === "l") return loggedIn() ? logOut() : (mode = "load", draw());
-    if (k === "d" && acct && (acct.codes.length || acct.passkeys.length)) { forgetArmed = true; say(S("PRESS THE NUMBER OF THE CODE OR PASSKEY TO DELETE.", "demon"), "Any other key cancels."); return draw(); }
     return draw();
   }
   if (mode === "ledger") {
@@ -1017,7 +817,7 @@ async function key(k) {
   if (mode === "title") {
     if (k === "p" || k === "c" || k === "enter") return jackIn();
     if (k === "b") { go("board"); return loadBoard(T.day); }
-    if (k === "l" && !T.name) return quickLogIn();
+    if (k === "l" && !T.name) { location.href = "/api/carry"; return; }
     if (k === "u" && T.name) { acctBack = "title"; return openAccount(); }
     if (k === "f" && freeOpen()) return startFree();
   }
@@ -1047,7 +847,7 @@ async function key(k) {
 const KEYS = { Enter: "enter", Escape: "esc", Tab: "tab", ArrowLeft: "left", ArrowRight: "right", "?": "?" };
 document.addEventListener("keydown", (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
-  if ((mode === "name" || mode === "loadcode" || guestBox()) && !["Enter", "Escape"].includes(e.key)) return;   // typing in a box
+  if ((mode === "name" || guestBox()) && !["Enter", "Escape"].includes(e.key)) return;   // typing in a box
   const k = KEYS[e.key] || (e.key.length === 1 ? e.key.toLowerCase() : null);
   if (!k) return;
   e.preventDefault();
