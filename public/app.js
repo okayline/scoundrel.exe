@@ -18,6 +18,7 @@ let run = null;          // the run on screen
 let board = null;        // leaderboard being shown
 let boardDay = null;
 let share = null;        // share text for boardDay (if you finished it)
+let carryRows = 24;      // PLAYER: blank rows inside the frame for the carry window (fitCarry sets it)
 let mode = "title";      // title | game | end | board | ledger | run | help | name | account | loading
 let back = "title";      // where Esc goes from board/help/name
 let bare = false;        // [B] pressed: the next demon is fought bare-handed
@@ -128,12 +129,34 @@ function draw() {
     $screen.innerHTML = rows.map((r) => `<span class="ln">${r}</span>`).join("\n");
   }
   shown = rows;
-  // (v0.9.3) PLAYER shows the registry's carry window under the screen (save codes, passkeys, carry), loaded each time it opens
+  // (v0.9.3) PLAYER shows the registry's carry window (save codes, passkeys, carry), loaded each time it opens. (v0.9.5) It
+  // sits inside the frame, over PLAYER's blank "slot" rows.
   const carry = document.getElementById("carry");
   if (carry && carry.hidden !== (mode !== "account")) { carry.hidden = mode !== "account"; carry.src = mode === "account" ? "/api/carry?embed=1" : "about:blank"; }
+  placeCarry();
   const box = document.getElementById("nameinput");
   if (box) { if (keepName != null) box.value = keepName; box.focus(); }
 }
+
+// the carry window over the slot rows: from the first to the last, inside the frame's side borders
+function placeCarry() {
+  const carry = document.getElementById("carry"), slots = $screen.querySelectorAll(".slot");
+  if (!carry || carry.hidden || !slots.length) return;
+  const box = carry.parentElement.getBoundingClientRect(), a = slots[0].getBoundingClientRect(), b = slots[slots.length - 1].getBoundingClientRect();
+  const ln = slots[0].closest(".ln").getBoundingClientRect(), inset = a.left - ln.left;
+  Object.assign(carry.style, { top: a.top - box.top + "px", left: a.left - box.left + carry.parentElement.scrollLeft + "px",
+    width: Math.max(0, ln.width - 2 * inset) + "px", height: b.bottom - a.top + "px" });
+}
+// once the window has loaded, make room for just that much (its body's height: the page's own height never shrinks
+// below the iframe's, so it would only ever grow)
+function fitCarry(f) {
+  const slots = $screen.querySelectorAll(".slot");
+  if (slots.length < 2 || !f.contentDocument || !f.contentDocument.body) return;
+  const pitch = slots[1].getBoundingClientRect().top - slots[0].getBoundingClientRect().top;   // one row, line gap included
+  const need = Math.max(2, Math.ceil(f.contentDocument.body.getBoundingClientRect().height / pitch));
+  if (need !== carryRows) { carryRows = need; draw(); }
+}
+addEventListener("resize", placeCarry);
 
 // a card squeezes the moment you pick it (straight on the element: no redraw, so nothing cuts it short)
 function squeeze(k) {
@@ -519,8 +542,9 @@ function accountScreen() {
       S(a.admin ? "[A] TURN OFF" : "[A] TURN ON", "", "a")]);
     rows.push(stat("LOADED ON", a.player ? `${a.devices} browser${a.devices === 1 ? "" : "s"} / device${a.devices === 1 ? "" : "s"}` : S("nothing yet", "dim")));
   }
-  rows.push("~");
-  rows.push(S("  Save codes, passkeys, logging in and the copy you carry are in the window below.", "dim"));
+  rows.push("");   // no stretch row: the carry window sets the height (v0.9.5)
+  // (v0.9.5) the carry window sits inside the frame, over these blank rows (placeCarry); the frame grows to fit it
+  for (let i = 0; i < carryRows; i++) rows.push([S(" ", "slot")]);
   return ["=", spread("SCOUNDREL.EXE   PLAYER", ""), "=", ...rows, "-", ...logRows(), "-",
     bar([["[N]AME", "n"], ["[ESC] BACK", "esc"]]),
     "="];
