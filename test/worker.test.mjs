@@ -663,14 +663,18 @@ test("the carried copy: today shows your pinned copy until the run is over; a cl
   assert.equal((await a("/api/today")).data.carry, null);
 });
 
-test("the CARRY picker: lists the account's copies and pins one", async () => {
-  const env = makeEnv(); const a = browser(env), pins = [];
+test("the CARRY window: the registry's page for this player, and pinning one", async () => {
+  const env = makeEnv(); const a = browser(env), pins = [], asked = [];
   Object.assign(env.REGISTRY, {
-    async heldAcross() { return [{ itemId: 4, copy: 2, game: "4dungeon", pinned: false, item: { name: "a lamp" } }]; },
+    async carryWindow(x) { asked.push(x); return "<!doctype html><p>window</p>"; },
     async pin(p) { pins.push(p); return { ok: true }; },
   });
-  await a("/api/start", {});
-  assert.deepEqual((await a("/api/copies")).data.copies, [{ itemId: 4, copy: 2, name: "a lamp", game: "4dungeon", pinned: false }]);
+  const start = await a("/api/start", {});
+  const pid = env.DB.raw.prepare("SELECT id FROM players").get().id;
+  const res = await worker.fetch(new Request("https://scoundrel.example/api/carry", { headers: { cookie: start.cookie.split(";")[0] } }), env);
+  assert.equal(res.headers.get("content-type"), "text/html; charset=utf-8");
+  assert.equal(await res.text(), "<!doctype html><p>window</p>");
+  assert.deepEqual([asked[0].game, asked[0].playerId, asked[0].pinUrl], ["scoundrel", pid, "/api/pin"]);
   assert.equal((await a("/api/pin", { itemId: 4, copy: 2 })).status, 200);
-  assert.deepEqual(pins, [{ game: "scoundrel", playerId: env.DB.raw.prepare("SELECT id FROM players").get().id, itemId: 4, copy: 2 }]);
+  assert.deepEqual(pins, [{ game: "scoundrel", playerId: pid, itemId: 4, copy: 2 }]);
 });

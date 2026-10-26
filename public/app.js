@@ -119,7 +119,7 @@ function draw() {
   const keepName = same ? document.getElementById("nameinput")?.value : null;   // typing survives redraws of the same screen
   drawnMode = mode;
   const lines = { title: titleScreen, game: gameScreen, end: endScreen, board: boardScreen, ledger: ledgerScreen, run: runScreen, help: helpScreen, name: nameScreen,
-    account: accountScreen, carry: carryScreen, newcode: newCodeScreen, load: loadScreen, loadcode: loadCodeScreen, loading: loadingScreen }[mode]();
+    account: accountScreen, newcode: newCodeScreen, load: loadScreen, loadcode: loadCodeScreen, loading: loadingScreen }[mode]();
   const rows = html(frame(lines));
   const spans = $screen.children;   // one <span class="ln"> per line
   if (same && spans.length === rows.length) {
@@ -537,29 +537,8 @@ function accountScreen() {
     "="];
 }
 
-// (v0.9) CARRY: every copy your account holds in any game (/api/copies), newest first; press its number to pin it, and
-// every game carries it from your next run.
-let carryList = null;
-function carryScreen() {
-  const rows = ["", S("  THE COPY YOU CARRY INTO EVERY GAME. PRESS ITS NUMBER TO PIN IT.", "dim"), ""];
-  if (!carryList) rows.push(S("  Loading...", "dim"));
-  else if (!carryList.length) rows.push(S("  You don't hold any copies yet. Find one in 4Dungeon, irl-dungeon or 88x31.", "dim"));
-  else carryList.slice(0, 9).forEach((c, i) => rows.push(["  ", S(`[${i + 1}]`, "", String(i + 1)), "  ", fit(c.name + " #" + c.copy, 40), "  ", S(c.game, "dim"), c.pinned ? S("  PINNED", "blessed") : ""]));
-  return ["=", spread("SCOUNDREL.EXE   CARRY", ""), "=", ...rows, "~", "-", ...logRows(), "-", bar([["[ESC] BACK", "esc"]]), "="];
-}
-async function openCarry() {
-  mode = "carry"; carryList = null; draw();
-  try { carryList = (await api("/api/copies")).copies; } catch (e) { carryList = []; say(S(e.message.toUpperCase(), "demon")); }
-  draw();
-}
-async function pinCarry(i) {
-  const c = carryList && carryList[i];
-  if (!c || busy) return;
-  busy = true;
-  try { await api("/api/pin", { itemId: c.itemId, copy: c.copy }); carryList.forEach((x) => x.pinned = x === c); T.carry = { name: c.name, copy: c.copy, blessed: T.carry && T.carry.name === c.name && T.carry.copy === c.copy ? T.carry.blessed : 0 }; say(`Pinned ${c.name} #${c.copy}.`, "Every game carries it from your next run."); }
-  catch (e) { say(S(e.message.toUpperCase(), "demon")); }
-  busy = false; draw();
-}
+// (v0.9) CARRY. (v0.9.1) [C]ARRY opens the registry's carry window (/api/carry), the same window every game opens:
+// every copy your account holds in any game, and the one you carry on top.
 
 function newCodeScreen() {
   return ["=", spread("SCOUNDREL.EXE   SAVE CODE", ""), "=", "~",
@@ -1003,7 +982,7 @@ async function key(k) {
     if (k !== "l") logoutArmed = false;
     if (k === "esc") { mode = acctBack; return draw(); }
     if (k === "n") { mode = "name"; back = "account"; nameErr = ""; return draw(); }
-    if (k === "c") return openCarry();
+    if (k === "c") { location.href = "/api/carry"; return; }
     if (k === "s") return makeCode();
     if (k === "r" && acct && acct.name) return rerollName();
     if (k === "a" && acct && acct.canAdmin) return switchAdmin(!acct.admin);
@@ -1011,11 +990,6 @@ async function key(k) {
     if (k === "l") return loggedIn() ? logOut() : (mode = "load", draw());
     if (k === "d" && acct && (acct.codes.length || acct.passkeys.length)) { forgetArmed = true; say(S("PRESS THE NUMBER OF THE CODE OR PASSKEY TO DELETE.", "demon"), "Any other key cancels."); return draw(); }
     return draw();
-  }
-  if (mode === "carry") {
-    if (/^[1-9]$/.test(k)) return pinCarry(Number(k) - 1);
-    if (k === "esc") { mode = "account"; return draw(); }
-    return;
   }
   if (mode === "ledger") {
     if (k === "esc" || k === "l") { mode = back; return draw(); }

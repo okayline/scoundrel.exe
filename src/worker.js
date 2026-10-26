@@ -73,7 +73,7 @@ const ROUTES = {
   "POST /api/codes": codes,
   "POST /api/load": loadCode,
   "POST /api/logout": logout,
-  "GET /api/copies": copies,
+  "GET /api/carry": carryPage,
   "POST /api/pin": pinCopy,
   "POST /api/passkey": passkey,
 };
@@ -599,14 +599,16 @@ async function markCarry(env, playerId, value, key) {
   } catch (e) { console.error(e); }
 }
 
-// The picker (account panel): every copy your account holds in any game, newest first, and pinning one of them to carry.
-//   GET  /api/copies              { copies: [{ itemId, copy, name, game, pinned }] } (up to 50)
+// The carry window ([C]ARRY in PLAYER): the registry's own page of every copy your account holds in any game, in
+// scoundrel.exe's frame (dungeon-items carry-window.js). Its buttons pin through POST /api/pin.
+//   GET  /api/carry               the window, as a page
 //   POST /api/pin {itemId, copy}  pin it: every game carries it from your next run
-async function copies(req, env) {
+async function carryPage(req, env) {
   const player = await findPlayer(req, env);
-  if (!player || !env.REGISTRY || !env.REGISTRY.heldAcross) return json({ copies: [] });
-  const list = await env.REGISTRY.heldAcross(GAME, player.id, 50);
-  return json({ copies: list.map((c) => ({ itemId: c.itemId, copy: c.copy, name: c.item.name, game: c.game, pinned: c.pinned })) });
+  if (!env.REGISTRY || !env.REGISTRY.carryWindow) throw new Oops("The registry is unavailable right now. Try again in a moment.", 503);
+  const html = await env.REGISTRY.carryWindow({ game: GAME, playerId: player ? player.id : 0, pinUrl: "/api/pin", back: "/",
+    frame: { title: "SCOUNDREL.EXE   CARRY", paper: "#07090a", ink: "#e4e4df", edge: "#8f8f8a", accent: "#e3b341", font: '"VT323", ui-monospace, monospace' } });
+  return new Response(html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
 }
 async function pinCopy(req, env) {
   const player = await findPlayer(req, env);
