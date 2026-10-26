@@ -182,6 +182,7 @@ async function today(req, env) {
   if (!player) return json(out);
   const run = await env.DB.prepare("SELECT * FROM runs WHERE player_id = ? AND day = ?").bind(player.id, info.day).first();
   if (run) out.run = runView(run, await gameOf(env, run));
+  out.carry = !run || run.status === "playing" ? carryView(await carried(env, player.id)) : null;
   // a run started just before midnight can still be finished the next day
   const old = await env.DB.prepare("SELECT * FROM runs WHERE player_id = ? AND day = ? AND status = 'playing'")
     .bind(player.id, yesterday(info.day)).first();
@@ -259,6 +260,7 @@ async function move(req, env) {
     break;
   }
   if (done && !player.admin) await checkpoint(env, run.id);
+  if (done && !player.admin && game.status === "won") await markCarry(env, player.id, "cleared_deck", "run:" + run.id);   // (v0.9) a cleared deck marks the carried copy
 
   return json(runView({ ...run, marks }, game, result.events));
 }
@@ -572,4 +574,25 @@ async function logout(req, env) {
   const s = await env.DB.prepare("DELETE FROM sessions WHERE token_hash = ?").bind(h).run();
   if (!s.meta.changes) await env.DB.prepare("UPDATE players SET token_hash = ? WHERE id = ? AND token_hash = ?").bind(await sha256(newToken()), player.id, h).run();
   return json({ ok: true }, 200, { "set-cookie": clear });
+}
+
+// ---------- the carried copy (copied from TILT.EXE v0.19) ----------
+// Your account's pinned copy from any game (dungeon-items registry.js pinned: the pin, else your newest copy), read when
+// a run starts so the page can show it, and read again when a memorable moment marks it (markCarried: a deed mark made
+// in this game, keyed so a retry makes no second mark). A Moon-blessed copy (a 4Dungeon mark) shows in gold. A registry
+// that's away, or no copy, carries nothing and never stops a run.
+async function carried(env, playerId) {
+  try {
+    const c = env.REGISTRY && env.REGISTRY.pinned ? await env.REGISTRY.pinned(GAME, playerId) : null;
+    return c && c.itemId ? { ...c, blessed: c.marks.some((m) => m.kind === "moon" && m.value === "blessed") ? 1 : 0 } : null;
+  } catch (e) { console.error(e); return null; }
+}
+const carryView = (c) => c ? { name: c.item.name, copy: c.copy, blessed: c.blessed } : null;
+async function markCarry(env, playerId, value, key) {
+  const c = await carried(env, playerId);
+  if (!c) return;
+  try {
+    const r = await env.REGISTRY.markCarried({ itemId: c.itemId, copy: c.copy, by: { game: GAME, playerId }, kind: "deed", value, key });
+    if (r && r.error) console.error("The registry refused the mark: " + r.error);
+  } catch (e) { console.error(e); }
 }

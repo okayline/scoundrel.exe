@@ -4,6 +4,15 @@ Newest first. Times are Hawaii time (HST).
 
 ---
 
+## v0.9.0 — "Carry"
+**Mon Oct 26, 2026 · 12:22 AM HST**
+
+- The title screen shows CARRYING: your account's pinned copy from any game (a 4Dungeon find, an 88x31 button, a Dawn Baton relic), or your newest copy when nothing is pinned, in gold if the Moon blessed it. Shown until today's run is over. Removed: nothing on the title screen said what you hold elsewhere.
+- Clearing the deck marks the carried copy "cleared_deck" in the shared registry (one mark per run). Removed: runs leaving no trace on the copies players hold.
+- Needs dungeon-items with the pinned copy (its migration 007) live first.
+
+---
+
 ## v0.8.15 — "Light Check"
 **Wed Oct 21, 2026 · 7:50 PM HST**
 

@@ -5,7 +5,7 @@
 // that draws them wide can never push the line out of place.
 
 const W = 80, IN = W - 4;                     // screen width, and the width inside the frame
-const VERSION = "v0.8.15";
+const VERSION = "v0.9.0";
 const RANK = { 11: "J", 12: "Q", 13: "K", 14: "A" };
 const SUIT = { C: "♣", S: "♠", D: "♦", H: "♥" };
 const KIND = { monster: "DEMON", weapon: "BLADE", potion: "HEALTH" };
@@ -202,6 +202,8 @@ function titleScreen() {
     stat("DEALT TO", played == null ? "..." : `${played} RUNNER${played === 1 ? "" : "S"}`),
     stat("NEXT DEAL IN", countdown()),
     stat("PLAYING AS", T.name ? T.name + (T.admin ? "  (ADMIN)" : "") : S("guest", "dim")),
+    // (v0.9) the copy you carry in: your account's pinned copy (/api/today carry), gold if the Moon blessed it
+    ...(T.carry ? [stat("CARRYING", S((T.carry.name + " #" + T.carry.copy).slice(0, 30), T.carry.blessed ? "blessed" : ""))] : []),
     "",
     center(r && r.status !== "playing" ? (r.status === "won" ? "YOU CLEARED TODAY'S DECK." : "TODAY'S DECK GOT YOU.") : "44 CARDS. 20 HP. ONE RUN."),
     "~", "-", ...(guestBox() ? whoRows() : logRows()), "-",

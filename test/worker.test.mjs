@@ -648,3 +648,17 @@ test("a finished run has a page by its ledger fingerprint: not until its day is 
   assert.deepEqual(p.ledger, { entry: end.id, record: end.record, prev: end.prev_hash, hash: end.hash });
   assert.equal("player" in p, false, "no player field beside the sealed record");
 });
+
+test("the carried copy: today shows your pinned copy until the run is over; a cleared deck marks it", async () => {
+  const env = makeEnv(); const a = browser(env), marked = [];
+  Object.assign(env.REGISTRY, {
+    async pinned() { return { itemId: 4, copy: 2, item: { name: "a lamp" }, marks: [{ kind: "moon", value: "blessed" }] }; },
+    async markCarried(m) { marked.push(m); return { ok: true, n: 2, created: true }; },
+  });
+  const r = (await a("/api/start", {})).data.run;
+  assert.deepEqual((await a("/api/today")).data.carry, { name: "a lamp", copy: 2, blessed: 1 });
+  const end = await playThrough(a, r);
+  const id = env.DB.raw.prepare("SELECT id FROM runs").get().id, pid = env.DB.raw.prepare("SELECT id FROM players").get().id;
+  assert.deepEqual(marked, end.status === "won" ? [{ itemId: 4, copy: 2, by: { game: "scoundrel", playerId: pid }, kind: "deed", value: "cleared_deck", key: "run:" + id }] : []);
+  assert.equal((await a("/api/today")).data.carry, null);
+});
