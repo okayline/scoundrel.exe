@@ -128,6 +128,9 @@ function draw() {
     $screen.innerHTML = rows.map((r) => `<span class="ln">${r}</span>`).join("\n");
   }
   shown = rows;
+  // (v0.9.3) PLAYER shows the registry's carry window under the screen (save codes, passkeys, carry), loaded each time it opens
+  const carry = document.getElementById("carry");
+  if (carry && carry.hidden !== (mode !== "account")) { carry.hidden = mode !== "account"; carry.src = mode === "account" ? "/api/carry?embed=1" : "about:blank"; }
   const box = document.getElementById("nameinput");
   if (box) { if (keepName != null) box.value = keepName; box.focus(); }
 }
@@ -517,9 +520,9 @@ function accountScreen() {
     rows.push(stat("LOADED ON", a.player ? `${a.devices} browser${a.devices === 1 ? "" : "s"} / device${a.devices === 1 ? "" : "s"}` : S("nothing yet", "dim")));
   }
   rows.push("~");
-  rows.push(S("  [C]ARRY: save codes, passkeys, logging in, and the copy you carry into every game.", "dim"));
+  rows.push(S("  Save codes, passkeys, logging in and the copy you carry are in the window below.", "dim"));
   return ["=", spread("SCOUNDREL.EXE   PLAYER", ""), "=", ...rows, "-", ...logRows(), "-",
-    bar([["[N]AME", "n"], ["[C]ARRY", "c"], ["[ESC] BACK", "esc"]]),
+    bar([["[N]AME", "n"], ["[ESC] BACK", "esc"]]),
     "="];
 }
 
@@ -786,7 +789,6 @@ async function key(k) {
   if (mode === "account") {
     if (k === "esc") { mode = acctBack; return draw(); }
     if (k === "n") { mode = "name"; back = "account"; nameErr = ""; return draw(); }
-    if (k === "c") { location.href = "/api/carry"; return; }
     if (k === "r" && acct && acct.name) return rerollName();
     if (k === "a" && acct && acct.canAdmin) return switchAdmin(!acct.admin);
     return draw();

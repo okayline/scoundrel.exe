@@ -27,6 +27,7 @@
     font-variant-ligatures: none;      /* VT323 joins fl, fi and ff into one cell, which would pull a border a column left */
   }
   .frame { max-width: 100%; overflow-x: auto; }
+  #carry { width: min(100%, 640px); height: 640px; border: 0; margin-top: 12px; background: transparent; }   /* the carry window under PLAYER (v0.9.3) */
   pre {
     margin: 0; font-family: inherit; line-height: 1.05;
     font-size: clamp(6px, calc((100vw - 32px) / 49), 22px); white-space: pre;
@@ -70,6 +71,7 @@
 <body>
   <div class="wrap">
     <div class="frame"><pre id="screen" aria-live="polite">LOADING...</pre></div>
+    <iframe id="carry" title="Save codes, passkeys and carry" hidden></iframe>
     <div id="ver" class="ver"></div>
   </div>
   <script src="app.js?v=0.8.14" defer></script>

@@ -609,7 +609,7 @@ async function carryPage(req, env) {
   if (!env.REGISTRY || !env.REGISTRY.carryWindow) throw new Oops("The registry is unavailable right now. Try again in a moment.", 503);
   const id = player ? await accountFor(env, player) : null;   // (v0.9.2) the window also shows save codes and passkeys
   const ways = { player: !!player, ...(id ? ok(await ACC(env).info(id)) : { codes: [], passkeys: [] }) };
-  const html = await env.REGISTRY.carryWindow({ game: GAME, playerId: player ? player.id : 0, pinUrl: "/api/pin", back: "/", ways,
+  const html = await env.REGISTRY.carryWindow({ game: GAME, playerId: player ? player.id : 0, pinUrl: "/api/pin", back: "/", ways, embed: new URL(req.url).searchParams.get("embed") === "1",
     frame: { title: "SCOUNDREL.EXE   CARRY", paper: "#07090a", ink: "#e4e4df", edge: "#8f8f8a", accent: "#e3b341", font: '"VT323", ui-monospace, monospace' } });
   return new Response(html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
 }
