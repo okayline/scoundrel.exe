@@ -4,6 +4,13 @@ Newest first. Times are Hawaii time (HST).
 
 ---
 
+## v0.11.1
+**Thu Oct 29, 2026 · 1:50 PM HST**
+
+- The shared footer reads `© ~*~88x31~*~ cLuB, 2026 · ≡ v0.11.1`, the same in every game (dungeon-items sets it). Removed: `scoundrel.exe` as the footer's name, and the unused `data-name` on its script line.
+
+---
+
 ## v0.11.0 — "Same Footer"
 **Thu Oct 29, 2026 · 1:45 PM HST**
 
