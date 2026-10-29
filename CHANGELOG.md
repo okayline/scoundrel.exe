@@ -4,6 +4,14 @@ Newest first. Times are Hawaii time (HST).
 
 ---
 
+## v0.11.0 — "Same Footer"
+**Thu Oct 29, 2026 · 1:45 PM HST**
+
+- The footer is the one every game shares (dungeon-items `/footer.js`): `© scoundrel.exe, 2026 · ≡ v0.11.0`, with the ≡ in the BBS blue. ≡ still pops up the save codes / passkeys window. Removed: this game's own ≡, its pop-up code and the version label under the screen.
+- The version is written in one place: the footer's script line in `index.html` (`data-version`); `app.js` reads it from there. Removed: the second copy of the version in `app.js`.
+
+---
+
 ## v0.10.0 — "Behind the Scenes"
 **Thu Oct 29, 2026 · 1:30 PM HST**
 

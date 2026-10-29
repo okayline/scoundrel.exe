@@ -5,7 +5,8 @@
 // that draws them wide can never push the line out of place.
 
 const W = 80, IN = W - 4;                     // screen width, and the width inside the frame
-const VERSION = "v0.10.0";
+// the version lives in one place: index.html, on the footer's script line (data-version)
+const VERSION = (document.querySelector("script[data-version]") || { dataset: {} }).dataset.version || "v0";
 const RANK = { 11: "J", 12: "Q", 13: "K", 14: "A" };
 const SUIT = { C: "♣", S: "♠", D: "♦", H: "♥" };
 const KIND = { monster: "DEMON", weapon: "BLADE", potion: "HEALTH" };
@@ -658,17 +659,6 @@ async function copyShare() {
 }
 
 function go(to) { back = ["board", "help", "ledger"].includes(mode) ? back : mode; mode = to; }
-// (v0.10.0) the ≡ under the screen: the shared save codes / passkeys / carry window (dungeon-items, through /api/carry)
-// pops up above it, over whatever screen is up. ≡ again, a click anywhere else or Esc closes it.
-const $carry = document.getElementById("carry");
-function showCarry(on) {
-  if ($carry.hidden === !on) return;
-  $carry.hidden = !on; $carry.src = on ? "/api/carry?embed=1" : "about:blank";
-}
-// once it has loaded: as tall as what it holds (the page caps it with max-height)
-function fitCarry(f) { try { const b = f.contentDocument && f.contentDocument.body; if (b) f.style.height = Math.ceil(b.scrollHeight) + "px"; } catch { /* fine */ } }
-document.getElementById("acct").addEventListener("click", (e) => { e.stopPropagation(); showCarry($carry.hidden); });
-document.addEventListener("click", () => showCarry(false));
 
 async function key(k) {
   if (mode === "loading") return;
@@ -725,7 +715,6 @@ async function key(k) {
 const KEYS = { Enter: "enter", Escape: "esc", Tab: "tab", ArrowLeft: "left", ArrowRight: "right", "?": "?" };
 document.addEventListener("keydown", (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
-  if (e.key === "Escape" && !$carry.hidden) { e.preventDefault(); return showCarry(false); }
   const k = KEYS[e.key] || (e.key.length === 1 ? e.key.toLowerCase() : null);
   if (!k) return;
   e.preventDefault();
@@ -774,7 +763,6 @@ setInterval(async () => {
   mode = "loading"; draw();
   try { await loadToday(); }
   catch (e) { $screen.textContent = "COULDN'T REACH THE SERVER.\n" + e.message; return; }
-  document.getElementById("ver").textContent = VERSION;
   mode = "title";
   if (T.unfinished) say(S("You have an unfinished run from yesterday's deck.", "gold"), "It still counts. Jack back in to finish it.");
   else if (T.run && T.run.status === "playing") say("Your run today is still going.", "The cards are where you left them.");

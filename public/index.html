@@ -60,20 +60,15 @@
   .btn.off:hover { background: none; color: var(--dim); }
   .btn.armed { background: var(--bright); color: var(--bg); }
   .admintag { background: var(--bright); color: var(--bg); }   /* admin players: shown on every screen */
-  .acct { cursor: pointer; font-size: 16px; color: #8cf; }   /* the ≡ before the version (the BBS footer ≡ colour): pops up the save codes / passkeys window */
-  /* that window: above the ≡, at its right edge, over the screen; drawn at 55% (the shared window's own text is big) */
-  #carry { position: absolute; right: 0; bottom: 100%; margin-bottom: 4px; width: 440px; height: 240px; max-height: 120vh;
-           border: 1px solid var(--trail); background: var(--bg); z-index: 10; transform: scale(0.55); transform-origin: bottom right; }
-  .ver { position: relative; align-self: flex-end; font-size: 12px; color: var(--trail); padding: 2px 1ch 0 0; letter-spacing: 0.05em; }
   .wrap { display: flex; flex-direction: column; }
 </style>
 </head>
 <body>
   <div class="wrap">
     <div class="frame"><pre id="screen" aria-live="polite">LOADING...</pre></div>
-    <div class="ver"><span id="acct" class="acct" title="Save codes and passkeys">≡</span> <span id="ver"></span>
-      <iframe id="carry" title="Save codes, passkeys and carry" onload="window.fitCarry && fitCarry(this)" hidden></iframe></div>
+    <!-- the footer every game shows (dungeon-items src/footer.js): "© scoundrel.exe, year · ≡ version"; ≡ pops up the save codes / passkeys window -->
+    <script src="https://dungeon-items.ddddungeon.workers.dev/footer.js" data-name="scoundrel.exe" data-version="v0.11.0"></script>
   </div>
-  <script src="app.js?v=0.10.0" defer></script>
+  <script src="app.js?v=0.11.0" defer></script>
 </body>
 </html>
