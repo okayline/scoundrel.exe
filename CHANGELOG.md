@@ -4,6 +4,15 @@ Newest first. Times are Hawaii time (HST).
 
 ---
 
+## v0.10.0 — "Behind the Scenes"
+**Thu Oct 29, 2026 · 1:30 PM HST**
+
+- Your name and account stay behind the scenes. The header is `SCOUNDREL.EXE // <screen>` and the title screen has no PLAYING AS. Removed: your name (or GUEST) in every header, PLAYING AS, and "(no name yet)" next to your rank.
+- Save codes, passkeys and logging in or out pop up in a small window above a `≡` before the version under the screen, over whatever screen is up (`≡` again, a click elsewhere or Esc closes it). It is the same shared window as before. Removed: the PLAYER screen (and its LOADED ON line), [U]SER and [L]OG IN on the title bar, and the hidden A / P keys on the end screen.
+- You still have a rolled name: the board and the ledger show it, your own row in white as before. The admin on/off switch is gone from the page for now (the server still has `/api/admin`). Removed: the name screen, [N]AME and [R]EROLL on PLAYER, the NAME row there, and the name box code (`nameScreen`, `whoRows`, `saveName`, `whoOk`, `rerollName`). The server's `/api/name` is unchanged.
+
+---
+
 ## v0.9.6 — "Side Door"
 **Thu Oct 29, 2026 · 10:35 AM HST**
 

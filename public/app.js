@@ -5,7 +5,7 @@
 // that draws them wide can never push the line out of place.
 
 const W = 80, IN = W - 4;                     // screen width, and the width inside the frame
-const VERSION = "v0.9.0";
+const VERSION = "v0.10.0";
 const RANK = { 11: "J", 12: "Q", 13: "K", 14: "A" };
 const SUIT = { C: "♣", S: "♠", D: "♦", H: "♥" };
 const KIND = { monster: "DEMON", weapon: "BLADE", potion: "HEALTH" };
@@ -18,9 +18,8 @@ let run = null;          // the run on screen
 let board = null;        // leaderboard being shown
 let boardDay = null;
 let share = null;        // share text for boardDay (if you finished it)
-let carryRows = 24;      // PLAYER: blank rows inside the frame for the carry window (fitCarry sets it)
-let mode = "title";      // title | game | end | board | ledger | run | help | name | account | loading
-let back = "title";      // where Esc goes from board/help/name
+let mode = "title";      // title | game | end | board | ledger | run | help | loading
+let back = "title";      // where Esc goes from board/help
 let bare = false;        // [B] pressed: the next demon is fought bare-handed
 let between = false;
 // free play: a random deck played only in this browser. Never sent anywhere, never ranked.
@@ -36,19 +35,17 @@ const freeOpen = () => canFree() || !!(freeRun && freeRun.status === "playing");
 let busy = false;
 let deadline = 0;        // when the next deck deals (ms)
 let log = ["", "", ""];  // two status lines, then one flavor line
-let nameErr = "";
 let ledgerData = null;   // the ledger page on screen
 let ledgerPages = [];    // the "before" of each newer page, for going back up
 let ledgerBefore = null; // this page: entries before this id (null = the newest)
 let hoverK = null;        // the card (1-4) the mouse is over: it gets a little v above it
-let acct = null;         // /api/account, on the account screen
 
 // ---------- small helpers ----------
 
 const pad2 = (n) => String(n).padStart(2, "0");
 const rk = (r) => RANK[r] || String(r);
 const nm = (c) => rk(c.rank) + SUIT[c.suit];
-const len = (segs) => segs.reduce((n, s) => n + (typeof s === "string" ? s.length : s.input ? s.w : s.t.length), 0);
+const len = (segs) => segs.reduce((n, s) => n + (typeof s === "string" ? s.length : s.t.length), 0);
 const padTo = (segs, w) => { const n = len(segs); return n < w ? [...segs, " ".repeat(w - n)] : segs; };
 const spread = (a, b, w = IN) => { const A = [].concat(a), B = [].concat(b); return [...A, " ".repeat(Math.max(1, w - len(A) - len(B))), ...B]; };
 const center = (segs, w = IN) => { segs = [].concat(segs); const n = len(segs); return [" ".repeat(Math.max(0, Math.floor((w - n) / 2))), ...segs]; };
@@ -102,7 +99,6 @@ const GLYPH = /[⚔‼♥♠♣♦↷█░·…]/g;
 function html(lines) {
   return lines.map((segs) => segs.map((s) => {
     if (typeof s === "string") s = { t: s };
-    if (s.input) return `<input id="nameinput" class="nameinput${nameErr ? " bad" : ""}" maxlength="${s.max || 16}" spellcheck="false" autocomplete="off" style="width:${s.w}ch" value="${esc(s.value || "")}">`;
     let t = esc(s.t).replace(GLYPH, (g) => `<span class="g">${g}${g === "⚔" || g === "‼" ? "\uFE0E" : ""}</span>`);
     const isCard = /\b(card|clk)\b/.test(s.c || "");
     const cls = [s.c, s.k ? (isCard ? "clk" : "btn") : ""].filter(Boolean).join(" ");
@@ -114,10 +110,9 @@ let drawnMode = null;
 let shown = [];   // the html of each line now on the screen
 function draw() {
   const same = drawnMode === mode;
-  const keepName = same ? document.getElementById("nameinput")?.value : null;   // typing survives redraws of the same screen
   drawnMode = mode;
-  const lines = { title: titleScreen, game: gameScreen, end: endScreen, board: boardScreen, ledger: ledgerScreen, run: runScreen, help: helpScreen, name: nameScreen,
-    account: accountScreen, loading: loadingScreen }[mode]();
+  const lines = { title: titleScreen, game: gameScreen, end: endScreen, board: boardScreen, ledger: ledgerScreen, run: runScreen, help: helpScreen,
+    loading: loadingScreen }[mode]();
   const rows = html(frame(lines));
   const spans = $screen.children;   // one <span class="ln"> per line
   if (same && spans.length === rows.length) {
@@ -129,34 +124,7 @@ function draw() {
     $screen.innerHTML = rows.map((r) => `<span class="ln">${r}</span>`).join("\n");
   }
   shown = rows;
-  // (v0.9.3) PLAYER shows the registry's carry window (save codes, passkeys, carry), loaded each time it opens. (v0.9.5) It
-  // sits inside the frame, over PLAYER's blank "slot" rows.
-  const carry = document.getElementById("carry");
-  if (carry && carry.hidden !== (mode !== "account")) { carry.hidden = mode !== "account"; carry.src = mode === "account" ? "/api/carry?embed=1" : "about:blank"; }
-  placeCarry();
-  const box = document.getElementById("nameinput");
-  if (box) { if (keepName != null) box.value = keepName; box.focus(); }
 }
-
-// the carry window over the slot rows: from the first to the last, inside the frame's side borders
-function placeCarry() {
-  const carry = document.getElementById("carry"), slots = $screen.querySelectorAll(".slot");
-  if (!carry || carry.hidden || !slots.length) return;
-  const box = carry.parentElement.getBoundingClientRect(), a = slots[0].getBoundingClientRect(), b = slots[slots.length - 1].getBoundingClientRect();
-  const ln = slots[0].closest(".ln").getBoundingClientRect(), inset = a.left - ln.left;
-  Object.assign(carry.style, { top: a.top - box.top + "px", left: a.left - box.left + carry.parentElement.scrollLeft + "px",
-    width: Math.max(0, ln.width - 2 * inset) + "px", height: b.bottom - a.top + "px" });
-}
-// once the window has loaded, make room for just that much (its body's height: the page's own height never shrinks
-// below the iframe's, so it would only ever grow)
-function fitCarry(f) {
-  const slots = $screen.querySelectorAll(".slot");
-  if (slots.length < 2 || !f.contentDocument || !f.contentDocument.body) return;
-  const pitch = slots[1].getBoundingClientRect().top - slots[0].getBoundingClientRect().top;   // one row, line gap included
-  const need = Math.max(2, Math.ceil(f.contentDocument.body.getBoundingClientRect().height / pitch));
-  if (need !== carryRows) { carryRows = need; draw(); }
-}
-addEventListener("resize", placeCarry);
 
 // a card squeezes the moment you pick it (straight on the element: no redraw, so nothing cuts it short)
 function squeeze(k) {
@@ -167,12 +135,8 @@ function squeeze(k) {
 }
 
 function header(left) {
-  // SCOUNDREL.EXE   //   NAME   //   SCREEN          NEXT DECK DEALT IN hh:mm:ss
-  const who = T && T.name ? T.name.toUpperCase() : "GUEST";
-  const [name, ...rest] = left.split(/\s{3,}/);
-  const wide = [name, who, ...rest].join("  //  "), right = `NEXT DECK DEALT IN ${countdown()}`;
-  // a long name squeezes the separators so the line still fits in 80 columns
-  return wide.length + right.length < IN ? spread(wide, right) : spread([name, who, ...rest].join(" // "), right);
+  // SCOUNDREL.EXE   //   SCREEN          NEXT DECK DEALT IN hh:mm:ss
+  return spread(left.split(/\s{3,}/).join("  //  "), `NEXT DECK DEALT IN ${countdown()}`);
 }
 
 const logRow = (i) => [S("> ", "dim"), typeof log[i] === "string" ? S(log[i], i === 2 ? "flavor" : "") : log[i]];
@@ -224,28 +188,13 @@ function titleScreen() {
     stat("TODAY'S DECK", deckNo(T.number)),
     stat("DEALT TO", played == null ? "..." : `${played} RUNNER${played === 1 ? "" : "S"}`),
     stat("NEXT DEAL IN", countdown()),
-    stat("PLAYING AS", T.name ? T.name + (T.admin ? "  (ADMIN)" : "") : S("guest", "dim")),
     // (v0.9) the copy you carry in: your account's pinned copy (/api/today carry), gold if the Moon blessed it
     ...(T.carry ? [stat("CARRYING", S((T.carry.name + " #" + T.carry.copy).slice(0, 30), T.carry.blessed ? "blessed" : ""))] : []),
     "",
     center(r && r.status !== "playing" ? (r.status === "won" ? "YOU CLEARED TODAY'S DECK." : "TODAY'S DECK GOT YOU.") : "44 CARDS. 20 HP. ONE RUN."),
-    "~", "-", ...(guestBox() ? whoRows() : logRows()), "-",
-    T.name ? bar([go, ...(freeOpen() ? [["[F]REE PLAY", "f"]] : []), ["[B]OARD", "b"], ["[U]SER", "u"], ["[?]", "?"]])
-      : bar([go, ...(freeOpen() ? [["[F]REE PLAY", "f"]] : []), ["[L]OG IN", "l"], ["[B]OARD", "b"], ["[?]", "?"]]),
+    "~", "-", ...logRows(), "-",
+    bar([go, ...(freeOpen() ? [["[F]REE PLAY", "f"]] : []), ["[B]OARD", "b"], ["[?]", "?"]]),
     "="];
-}
-
-// the first time a guest starts a run: ask for a name, right on the title screen
-// Not logged in: the front page's third log line asks who's playing, with the name box already open.
-// A name makes a new player and starts; ESC (or ENTER on an empty box) plays as a guest.
-// (Logging in as an existing player is on the PLAYER page.)
-const guestBox = () => false;   // name box on the front page is off
-function whoRows() {
-  return [
-    logRow(0),
-    nameErr ? [S("> ", "dim"), S(nameErr.toUpperCase(), "demon")] : logRow(1),
-    [S("> ", "dim"), "WHO'S PLAYING?   NAME: ", { input: true, w: 16 }],
-  ];
 }
 
 function gameScreen() {
@@ -368,7 +317,7 @@ function endScreen() {
     "",
     stat("SCORE", S(String(run.score), won ? "gold" : "demon")),
     run.free ? stat("BEST FREE", store.get("scoundrel.bestFree") || String(run.score)) :
-    stat("RANK", T.admin ? "ADMIN RUN (doesn't count)" : you ? `#${you.rank} of ${board.played}${you.named ? "" : "  (no name yet)"}` : "..."),
+    stat("RANK", T.admin ? "ADMIN RUN (doesn't count)" : you ? `#${you.rank} of ${board.played}` : "..."),
     "",
     ["                        ", S(marks, "marks")],
     "~", "-", ...logRows(), "-",
@@ -517,67 +466,6 @@ function helpScreen() {
     "~", "-", bar([["[ESC] BACK", "esc"]]), "="];
 }
 
-function nameScreen() {
-  return ["=", spread("SCOUNDREL.EXE   NAME", ""), "=", "", "",
-    center("PICK A NAME FOR THE LEADERBOARD"), "",
-    center(S("2 to 16 letters, numbers, spaces, - _ .", "dim")), "", "",
-    [" ".repeat(25), "NAME: ", { input: true, w: 16, value: T.name || "" }], "",
-    center(nameErr ? S(nameErr.toUpperCase(), "demon") : S("You started with a random one. Change it any time.", "dim")),
-    "~", "-", ...logRows(), "-",
-    bar([["[ENTER] SAVE", "enter"], ["[ESC] BACK", "esc"]]), "="];
-}
-
-// ---------- account: save codes and passkeys ----------
-
-const md = (t) => (t ? new Date(t * 1000).toLocaleDateString("en-US", { month: "short", day: "2-digit" }).toUpperCase() : "");
-
-function accountScreen() {
-  const a = acct;
-  const stat = (label, value) => ["  ", S(dots(label, "", 16), "dim"), value];
-  const rows = [""];
-  if (!a) rows.push(S("  Loading...", "dim"));
-  else {
-    rows.push(a.name ? ["  ", S(dots("NAME", "", 16), "dim"), a.name, "   ", S("[R]EROLL", "", "r")] : stat("NAME", S("guest (no name)", "dim")));
-    if (a.canAdmin) rows.push(["  ", S(dots("ADMIN", "", 16), "dim"), a.admin ? "ON  (your runs don't count)" : "OFF (you play like anyone)", "   ",
-      S(a.admin ? "[A] TURN OFF" : "[A] TURN ON", "", "a")]);
-    rows.push(stat("LOADED ON", a.player ? `${a.devices} browser${a.devices === 1 ? "" : "s"} / device${a.devices === 1 ? "" : "s"}` : S("nothing yet", "dim")));
-  }
-  rows.push("");   // no stretch row: the carry window sets the height (v0.9.5)
-  // (v0.9.5) the carry window sits inside the frame, over these blank rows (placeCarry); the frame grows to fit it
-  for (let i = 0; i < carryRows; i++) rows.push([S(" ", "slot")]);
-  return ["=", spread("SCOUNDREL.EXE   PLAYER", ""), "=", ...rows, "-", ...logRows(), "-",
-    bar([["[N]AME", "n"], ["[ESC] BACK", "esc"]]),
-    "="];
-}
-
-// (v0.9) CARRY. (v0.9.1) [C]ARRY opens the registry's carry window (/api/carry), the same window every game opens:
-// every copy your account holds in any game, and the one you carry on top. (v0.9.2) It also holds the save codes and
-// passkeys, and logging in and out, which used to be screens here.
-
-async function openAccount() {
-  go("account"); acct = null; draw();
-  try { acct = await api("/api/account"); } catch (e) { say(S(e.message.toUpperCase(), "demon")); }
-  draw();
-}
-
-async function rerollName() {
-  if (busy) return; busy = true;
-  try { const d = await api("/api/name", { reroll: true }); T.name = acct.name = d.name; say(`You're ${d.name} now.`, "Reroll again any time."); }
-  catch (e) { say(S(e.message.toUpperCase(), "demon")); }
-  busy = false; draw();
-}
-
-// admins: admin mode on (runs don't count, R restarts) or off (play like anyone; today's admin run is thrown away)
-async function switchAdmin(on) {
-  if (busy) return; busy = true;
-  try {
-    await api("/api/admin", { on });
-    await loadToday(); acct = await api("/api/account").catch(() => acct);
-    say(on ? "Admin mode on." : "Admin mode off.", on ? "Your runs don't count. R restarts." : "Today's run counts now.");
-  } catch (e) { say(S(e.message.toUpperCase(), "demon")); }
-  busy = false; draw();
-}
-
 
 function loadingScreen() {
   return ["=", "SCOUNDREL.EXE", "=", "~", center("DIALING IN..."), "~", "="];
@@ -654,15 +542,6 @@ async function jackIn() {
   if (run && run.status === "playing") { mode = "game"; say(`Room ${pad2(run.view.turn)}. Picking up where you left off.`, pick(FLAVOR.deal)); draw(); return; }
   if (run) { await showEnd(); return; }
   return startRun();
-}
-
-// the front page's box: a name makes a new player and starts; empty plays as a guest
-async function whoOk() {
-  const box = document.getElementById("nameinput");
-  const text = (box ? box.value : "").trim();
-  if (!text) { nameErr = ""; return jackIn(); }
-  try { const d = await api("/api/name", { name: text }); T.name = d.name; nameErr = ""; return jackIn(); }
-  catch (e) { nameErr = e.message; draw(); }
 }
 
 async function startRun() {
@@ -778,45 +657,21 @@ async function copyShare() {
   draw();
 }
 
-async function saveName() {
-  const box = document.getElementById("nameinput");
-  const name = (box ? box.value : "").trim();
-  try {
-    const d = await api("/api/name", { name });
-    T.name = d.name; nameErr = "";
-    say(`You're ${d.name} now.`, "The board will know you.");
-    await openAccountBack(); return;
-  } catch (e) { nameErr = e.message; }
-  draw();
+function go(to) { back = ["board", "help", "ledger"].includes(mode) ? back : mode; mode = to; }
+// (v0.10.0) the ≡ under the screen: the shared save codes / passkeys / carry window (dungeon-items, through /api/carry)
+// pops up above it, over whatever screen is up. ≡ again, a click anywhere else or Esc closes it.
+const $carry = document.getElementById("carry");
+function showCarry(on) {
+  if ($carry.hidden === !on) return;
+  $carry.hidden = !on; $carry.src = on ? "/api/carry?embed=1" : "about:blank";
 }
-
-function go(to) { back = ["board", "help", "name", "ledger"].includes(mode) ? back : mode; mode = to; }
-let acctBack = "title";  // where Esc goes from the account screen
-async function openAccountBack() { const b = acctBack; await openAccount(); acctBack = b; }
+// once it has loaded: as tall as what it holds (the page caps it with max-height)
+function fitCarry(f) { try { const b = f.contentDocument && f.contentDocument.body; if (b) f.style.height = Math.ceil(b.scrollHeight) + "px"; } catch { /* fine */ } }
+document.getElementById("acct").addEventListener("click", (e) => { e.stopPropagation(); showCarry($carry.hidden); });
+document.addEventListener("click", () => showCarry(false));
 
 async function key(k) {
   if (mode === "loading") return;
-  if (mode === "name") {
-    if (k === "enter") return saveName();
-    if (k === "esc") { nameErr = ""; return openAccountBack(); }
-    return;
-  }
-  if (guestBox()) {
-    if (k === "enter") return whoOk();
-    if (k === "esc") { nameErr = ""; return jackIn(); }
-    if (k === "b") { go("board"); return loadBoard(T.day); }     // clicks only (letters type in the box)
-    if (k === "l") return openLedger();
-    if (k === "h") { go("help"); return draw(); }
-    if (k === "a") { acctBack = "title"; return openAccount(); }
-    return;
-  }
-  if (mode === "account") {
-    if (k === "esc") { mode = acctBack; return draw(); }
-    if (k === "n") { mode = "name"; back = "account"; nameErr = ""; return draw(); }
-    if (k === "r" && acct && acct.name) return rerollName();
-    if (k === "a" && acct && acct.canAdmin) return switchAdmin(!acct.admin);
-    return draw();
-  }
   if (mode === "ledger") {
     if (k === "esc" || k === "l") { mode = back; return draw(); }
     if (k === "b") { go("board"); return loadBoard(boardDay || T.day); }
@@ -843,8 +698,6 @@ async function key(k) {
   if (mode === "title") {
     if (k === "p" || k === "c" || k === "enter") return jackIn();
     if (k === "b") { go("board"); return loadBoard(T.day); }
-    if (k === "l" && !T.name) { location.href = "/api/carry"; return; }
-    if (k === "u" && T.name) { acctBack = "title"; return openAccount(); }
     if (k === "f" && freeOpen()) return startFree();
   }
   if (k === "r" && T.admin && !run.free && (mode === "game" || mode === "end")) return restartRun();
@@ -865,7 +718,6 @@ async function key(k) {
     if (k === "s") return copyShare();
     if (k === "b") { go("board"); return loadBoard(run.day); }
     if (k === "l") return openLedger();
-    if (k === "a" || k === "p") { acctBack = "end"; return openAccount(); }
     if (k === "esc" || k === "enter") { mode = "title"; return draw(); }
   }
 }
@@ -873,7 +725,7 @@ async function key(k) {
 const KEYS = { Enter: "enter", Escape: "esc", Tab: "tab", ArrowLeft: "left", ArrowRight: "right", "?": "?" };
 document.addEventListener("keydown", (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
-  if ((mode === "name" || guestBox()) && !["Enter", "Escape"].includes(e.key)) return;   // typing in a box
+  if (e.key === "Escape" && !$carry.hidden) { e.preventDefault(); return showCarry(false); }
   const k = KEYS[e.key] || (e.key.length === 1 ? e.key.toLowerCase() : null);
   if (!k) return;
   e.preventDefault();
@@ -905,7 +757,7 @@ $screen.addEventListener("pointerup", (e) => {
   }
 });
 
-// the clock: redraw each second (but not while typing a name), and a new deck at midnight UTC
+// the clock: redraw each second, and a new deck at midnight UTC
 setInterval(async () => {
   if (!T) return;
   if (Date.now() >= deadline) {
@@ -913,9 +765,7 @@ setInterval(async () => {
     if (mode === "title") board = null;
     say(`A new deck is dealt: ${deckNo(T.number)}.`, "Everyone starts again.");
   }
-  // (not while someone's typing in the front page's box)
-  const typing = document.activeElement && document.activeElement.id === "nameinput" && document.activeElement.value;
-  if ((mode === "title" && !typing) || mode === "game" || mode === "end") draw();
+  if (mode === "title" || mode === "game" || mode === "end") draw();
 }, 1000);
 
 // ---------- start ----------

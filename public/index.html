@@ -27,7 +27,6 @@
     font-variant-ligatures: none;      /* VT323 joins fl, fi and ff into one cell, which would pull a border a column left */
   }
   .frame { max-width: 100%; overflow-x: auto; position: relative; }
-  #carry { position: absolute; border: 0; background: transparent; }   /* the carry window inside PLAYER's frame, over its slot rows (v0.9.5, placeCarry) */
   pre {
     margin: 0; font-family: inherit; line-height: 1.05;
     font-size: clamp(6px, calc((100vw - 32px) / 49), 22px); white-space: pre;
@@ -61,19 +60,20 @@
   .btn.off:hover { background: none; color: var(--dim); }
   .btn.armed { background: var(--bright); color: var(--bg); }
   .admintag { background: var(--bright); color: var(--bg); }   /* admin players: shown on every screen */
-  .nameinput { background: var(--bg); color: var(--fg); border: none; outline: 1px solid var(--trail); font: inherit; padding: 0; margin: 0;
-               box-sizing: border-box; text-transform: uppercase; vertical-align: top; height: 1.05em; user-select: text; }
-  .nameinput.bad { outline-color: var(--bright); outline-width: 2px; }
-  .ver { align-self: flex-end; font-size: 12px; color: var(--trail); padding: 2px 1ch 0 0; letter-spacing: 0.05em; }
+  .acct { cursor: pointer; font-size: 16px; color: #8cf; }   /* the ≡ before the version (the BBS footer ≡ colour): pops up the save codes / passkeys window */
+  /* that window: above the ≡, at its right edge, over the screen; drawn at 55% (the shared window's own text is big) */
+  #carry { position: absolute; right: 0; bottom: 100%; margin-bottom: 4px; width: 440px; height: 240px; max-height: 120vh;
+           border: 1px solid var(--trail); background: var(--bg); z-index: 10; transform: scale(0.55); transform-origin: bottom right; }
+  .ver { position: relative; align-self: flex-end; font-size: 12px; color: var(--trail); padding: 2px 1ch 0 0; letter-spacing: 0.05em; }
   .wrap { display: flex; flex-direction: column; }
 </style>
 </head>
 <body>
   <div class="wrap">
-    <div class="frame"><pre id="screen" aria-live="polite">LOADING...</pre>
-      <iframe id="carry" title="Save codes, passkeys and carry" scrolling="no" onload="window.fitCarry && fitCarry(this)" hidden></iframe></div>
-    <div id="ver" class="ver"></div>
+    <div class="frame"><pre id="screen" aria-live="polite">LOADING...</pre></div>
+    <div class="ver"><span id="acct" class="acct" title="Save codes and passkeys">≡</span> <span id="ver"></span>
+      <iframe id="carry" title="Save codes, passkeys and carry" onload="window.fitCarry && fitCarry(this)" hidden></iframe></div>
   </div>
-  <script src="app.js?v=0.9.5" defer></script>
+  <script src="app.js?v=0.10.0" defer></script>
 </body>
 </html>
