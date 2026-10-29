@@ -76,6 +76,7 @@ const ROUTES = {
   "GET /api/carry": carryPage,
   "POST /api/pin": pinCopy,
   "POST /api/passkey": passkey,
+  "POST /api/bbs-enter": bbsEnter,
 };
 
 // ---------- helpers ----------
@@ -475,14 +476,14 @@ async function accountFor(env, player, make = false) {
 
 // Log this browser in as the account's player here: the one it already has, else this browser's own player (if it has
 // no account yet), else a new one. Returns { player, cookie }.
-async function enter(req, env, accountId) {
+async function enter(req, env, accountId, { trusted = false } = {}) {
   const acc = ACC(env);
   let { playerId } = await acc.playerFor(accountId, GAME);
   if (!playerId) {
     const cur = await findPlayer(req, env);
     if (cur && !(await acc.accountOf(GAME, cur.id)).accountId) playerId = cur.id;
     else {
-      if (!(await rateLimit(env, req, "new-player", 20, 3600))) throw new Oops("Too many new players from here. Try again later.", 429);
+      if (!trusted && !(await rateLimit(env, req, "new-player", 20, 3600))) throw new Oops("Too many new players from here. Try again later.", 429);
       const t = now();
       playerId = (await env.DB.prepare("INSERT INTO players (token_hash, created_at, seen_at) VALUES (?, ?, ?) RETURNING id").bind(await sha256(newToken()), t, t).first()).id;
     }
@@ -491,6 +492,20 @@ async function enter(req, env, accountId) {
   const p = await giveName(env, await env.DB.prepare("SELECT id, name FROM players WHERE id = ?").bind(playerId).first());
   if (!p) throw new Oops("That player is gone.", 404);
   return { player: p, cookie: setCookie(await newSession(env, p.id)) };
+}
+
+// The 88x31 BBS signs its users in here. It holds the shared accounts key (ACCOUNTS_KEY, the same secret as dungeon-items)
+// and says which account; the answer is that account's player here and a login token for it. Without the key: 404, as if
+// the route didn't exist. No new-player rate limit: every BBS user comes from the BBS's one address.
+const sameKey = (a, b) => a.length === b.length && [...a].reduce((x, c, i) => x | (c.charCodeAt(0) ^ b.charCodeAt(i)), 0) === 0;
+async function bbsEnter(req, env) {
+  const key = req.headers.get("x-accounts-key") || "";
+  if (!env.ACCOUNTS_KEY || env.ACCOUNTS_KEY.length < 16 || !sameKey(key, env.ACCOUNTS_KEY)) return json({ error: "Not found." }, 404);
+  const accountId = Number((await body(req)).accountId);
+  if (!Number.isInteger(accountId) || accountId < 1) throw new Oops("Bad account.");
+  ok(await ACC(env).info(accountId));
+  const { player, cookie } = await enter(req, env, accountId, { trusted: true });
+  return json({ name: player.name, token: cookie.split(";")[0].split("=")[1] });
 }
 
 async function account(req, env) {

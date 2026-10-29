@@ -4,6 +4,14 @@ Newest first. Times are Hawaii time (HST).
 
 ---
 
+## v0.9.6 — "Side Door"
+**Thu Oct 29, 2026 · 10:35 AM HST**
+
+- The 88x31 BBS can sign its users in: `POST /api/bbs-enter {accountId}` with the shared accounts key (`x-accounts-key`, the `ACCOUNTS_KEY` secret, the same value as dungeon-items) answers with that account's player here and a login token, making and linking the player the first time. Without the key it answers 404. So a BBS user and their scoundrel.exe player are one 88x31 account. Removed: nothing; save codes and passkeys work as before.
+- Needs the `ACCOUNTS_KEY` secret set on this Worker.
+
+---
+
 ## v0.9.0 — "Carry"
 **Mon Oct 26, 2026 · 12:22 AM HST**
 

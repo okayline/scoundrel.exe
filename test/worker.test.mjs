@@ -678,3 +678,19 @@ test("the CARRY window: the registry's page for this player, and pinning one", a
   assert.equal((await a("/api/pin", { itemId: 4, copy: 2 })).status, 200);
   assert.deepEqual(pins, [{ game: "scoundrel", playerId: pid, itemId: 4, copy: 2 }]);
 });
+
+test("the BBS signs a user in with the accounts key: same player as the account's, 404 without the key", async () => {
+  const env = { ...makeEnv(), ACCOUNTS_KEY: "k".repeat(24) };
+  const bbs = (key, body) => worker.fetch(new Request("https://scoundrel.example/api/bbs-enter", {
+    method: "POST", headers: { "content-type": "application/json", ...(key ? { "x-accounts-key": key } : {}) }, body: JSON.stringify(body) }), env);
+  const { accountId } = await env.ACCOUNTS.createAccount();
+  assert.equal((await bbs(null, { accountId })).status, 404);
+  assert.equal((await bbs("wrong".repeat(5), { accountId })).status, 404);
+  const a = await (await bbs("k".repeat(24), { accountId })).json();
+  assert.match(a.token, /^[A-Za-z0-9_-]{20,}$/);
+  assert.ok(a.name);
+  const b = await (await bbs("k".repeat(24), { accountId })).json();
+  assert.equal(b.name, a.name);   // the same account gets the same player again
+  const today = await worker.fetch(new Request("https://scoundrel.example/api/today", { headers: { cookie: "sx=" + a.token } }), env);
+  assert.equal((await today.json()).name, a.name);
+});
