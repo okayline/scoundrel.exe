@@ -8,6 +8,8 @@ Newest first. Times are Hawaii time (HST).
 **Thu Oct 29, 2026 · 10:00 PM HST**
 
 - The screen no longer scrolls inside itself, so no scrollbar shows beside it. Removed: the screen box's own scrolling (`overflow-x: auto` on `.frame`).
+- The shared footer (from dungeon-items) waits until the page has loaded before it shows, so it no longer appears alone in the middle of the screen first, and its text can be selected. Removed: nothing in this game (the change is in dungeon-items `footer.js`).
+- The comment above the footer in `index.html` shows the footer's current text ("🄯 ~*~88x31~*~ · § ≡ version"). Removed: the old text in that comment ("© ~*~88x31~*~ cLuB, year · ≡ version").
 
 ---
 
