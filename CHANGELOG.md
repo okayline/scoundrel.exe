@@ -4,6 +4,13 @@ Newest first. Times are Hawaii time (HST).
 
 ---
 
+## v0.11.2
+**Thu Oct 29, 2026 · 2:35 PM HST**
+
+- The 88x31 BBS can sign its users in as guests: `POST /api/bbs-enter` with no account makes a guest player (like a web visitor's) and answers its login token. The BBS keeps one per BBS user. Removed: nothing (signing in with an account still works).
+
+---
+
 ## v0.11.1
 **Thu Oct 29, 2026 · 1:50 PM HST**
 

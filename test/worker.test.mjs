@@ -694,3 +694,15 @@ test("the BBS signs a user in with the accounts key: same player as the account'
   const today = await worker.fetch(new Request("https://scoundrel.example/api/today", { headers: { cookie: "sx=" + a.token } }), env);
   assert.equal((await today.json()).name, a.name);
 });
+
+test("the BBS can sign a user in as a guest: no account, a new guest player each time it asks", async () => {
+  const env = { ...makeEnv(), ACCOUNTS_KEY: "k".repeat(24) };
+  const bbs = (key, body) => worker.fetch(new Request("https://scoundrel.example/api/bbs-enter", {
+    method: "POST", headers: { "content-type": "application/json", ...(key ? { "x-accounts-key": key } : {}) }, body: JSON.stringify(body) }), env);
+  assert.equal((await bbs(null, {})).status, 404);
+  const a = await (await bbs("k".repeat(24), {})).json(), b = await (await bbs("k".repeat(24), {})).json();
+  assert.match(a.token, /^[A-Za-z0-9_-]{20,}$/);
+  assert.notEqual(a.token, b.token);
+  const today = await worker.fetch(new Request("https://scoundrel.example/api/today", { headers: { cookie: "sx=" + a.token } }), env);
+  assert.equal((await today.json()).name, a.name);
+});

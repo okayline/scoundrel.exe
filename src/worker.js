@@ -495,13 +495,22 @@ async function enter(req, env, accountId, { trusted = false } = {}) {
 }
 
 // The 88x31 BBS signs its users in here. It holds the shared accounts key (ACCOUNTS_KEY, the same secret as dungeon-items)
-// and says which account; the answer is that account's player here and a login token for it. Without the key: 404, as if
+// and says which account (or none, for a guest player); the answer is that player here and a login token for it. Without the key: 404, as if
 // the route didn't exist. No new-player rate limit: every BBS user comes from the BBS's one address.
 const sameKey = (a, b) => a.length === b.length && [...a].reduce((x, c, i) => x | (c.charCodeAt(0) ^ b.charCodeAt(i)), 0) === 0;
 async function bbsEnter(req, env) {
   const key = req.headers.get("x-accounts-key") || "";
   if (!env.ACCOUNTS_KEY || env.ACCOUNTS_KEY.length < 16 || !sameKey(key, env.ACCOUNTS_KEY)) return json({ error: "Not found." }, 404);
-  const accountId = Number((await body(req)).accountId);
+  const b = await body(req);
+  // no account: a guest player, the same as a web visitor gets (needPlayer), and its login token. The BBS keeps the token
+  // for that BBS user, so no 88x31 account is made for anyone.
+  if (b.accountId == null) {
+    const token = newToken(), t = now();
+    const r = await env.DB.prepare("INSERT INTO players (token_hash, created_at, seen_at) VALUES (?, ?, ?) RETURNING id, name, admin")
+      .bind(await sha256(token), t, t).first();
+    return json({ name: (await giveName(env, r)).name, token });
+  }
+  const accountId = Number(b.accountId);
   if (!Number.isInteger(accountId) || accountId < 1) throw new Oops("Bad account.");
   ok(await ACC(env).info(accountId));
   const { player, cookie } = await enter(req, env, accountId, { trusted: true });
