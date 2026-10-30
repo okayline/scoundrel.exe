@@ -4,6 +4,13 @@ Newest first. Times are Hawaii time (HST).
 
 ---
 
+## v0.11.3
+**Thu Oct 29, 2026 · 10:00 PM HST**
+
+- The screen no longer scrolls inside itself, so no scrollbar shows beside it. Removed: the screen box's own scrolling (`overflow-x: auto` on `.frame`).
+
+---
+
 ## v0.11.2
 **Thu Oct 29, 2026 · 2:35 PM HST**
 
