@@ -673,7 +673,7 @@ async function key(k) {
     if (k === "esc") { history.replaceState(null, "", location.pathname); mode = "title"; return draw(); }
     if (k === "b" && runPage) { go("board"); return loadBoard(runPage.day); }
     if (k === "l") return openLedger();
-    if (k === "r" && runPage) { window.open("https://88x31.app/registry?head=" + runPage.ledger.hash, "_blank", "noopener"); return; }
+    if (k === "r" && runPage) { window.open("https://club.88x31.app/registry?head=" + runPage.ledger.hash, "_blank", "noopener"); return; }
     return;
   }
   if (mode === "board" && k === "l") return openLedger();
