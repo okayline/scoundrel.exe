@@ -762,7 +762,7 @@ setInterval(async () => {
 (async () => {
   mode = "loading"; draw();
   try { await loadToday(); }
-  catch (e) { $screen.textContent = "COULDN'T REACH THE SERVER.\n" + e.message; return; }
+  catch (e) { $screen.textContent = "COULDN'T REACH THE SERVER.\n" + e.message; document.getElementById("ddfoot").hidden = false; return; }
   mode = "title";
   if (T.unfinished) say(S("You have an unfinished run from yesterday's deck.", "gold"), "It still counts. Jack back in to finish it.");
   else if (T.run && T.run.status === "playing") say("Your run today is still going.", "The cards are where you left them.");
@@ -770,6 +770,7 @@ setInterval(async () => {
   else say(["A fresh deck is dealt. Everyone gets the same one.", "You get one run at it. No do-overs."], "");
   const linked = (new URLSearchParams(location.search).get("run") || "").toLowerCase();
   if (/^[0-9a-f]{64}$/.test(linked)) openRun(linked); else draw();   // ?run=FINGERPRINT (the registry's link) opens that run's page
+  document.getElementById("ddfoot").hidden = false;   // (v0.11.4) the footer shows only once the game has drawn, so it is never alone mid-screen
   api(`/api/leaderboard?day=${T.day}`).then((b) => { board = b; boardDay = T.day; if (mode === "title") draw(); }).catch(() => {});
   api("/api/history").then((h) => {
     everPlayed = h.runs.some((x) => x.status !== "playing");
