@@ -17,7 +17,7 @@ A daily seeded Scoundrel game (the solo card game by Zach Gage and Kurt Bieg): e
 
 **Versions.** The real version is `data-version` on the footer script in `public/index.html` (v0.11.4 now); `app.js` reads it. The title line in `README.md` says v0.8.9 and is out of date, so don't trust it. A release bumps `data-version` and adds an entry at the top of `CHANGELOG.md`. No test checks that these match, so check by hand. The detailed dev entry goes in `scoundrel.exe/changelog-v0.1.md` in the private dungeon-notes repo.
 
-<!-- BEGIN SHARED RULES v7 (2026-10-31). One copy of this block is in every Dungeons repo's CLAUDE.md. The source is dungeon-notes/SHARED-RULES.md. Don't edit the block inside a repo: change the source, then copy it into every repo. -->
+<!-- BEGIN SHARED RULES v8 (2026-10-31). One copy of this block is in every Dungeons repo's CLAUDE.md. The source is dungeon-notes/SHARED-RULES.md. Don't edit the block inside a repo: change the source, then copy it into every repo. -->
 ## Working rules (shared by every repo)
 
 "kura" is the owner. "4Dungeon" is the repo `daily-dungeon`. Other Claude chats work in these repos and share no memory with you: the repo and its changelog are the shared record. A repo section above beats a rule below, except rules 1 to 4.
@@ -36,7 +36,7 @@ A daily seeded Scoundrel game (the solo card game by Zach Gage and Kurt Bieg): e
 7. Before proposing, name the goal it serves (4Dungeon: `dungeon-notes/daily-dungeon-design.md`, section 15) and how it would most likely fail. No goal, no proposal. Propose the smallest version first.
 
 **Building**
-8. Commit locally as asked. Push only when kura says to. "Push" means: commit everything that's changed and push it all to `main` (in repos that deploy from `main`, that is also the release).
+8. Commit locally as asked. Push only when kura says to. "Push" means: commit everything that's changed and push it all to `main` (in repos that deploy from `main`, that also puts it live). Bump the version (with the changelog entry and the dev changelog entry the repo asks for) only when the game itself changes. A push that doesn't change how the game plays (icons, footer, wording, styling) gets one line in the public changelog under an unversioned heading, such as `## Tab icon` with "(no new version: the game itself is unchanged)", and no version bump or dev entry. This rule beats a repo section that says every push is a release.
 9. Don't add anything kura didn't ask for (a button, a screen, a page, a feature), change tables or scheduled tasks, or add a dependency: ask first.
 10. Delete, don't park: no new flags or "off for now" code. Fix a shared problem once, in the shared place. Prefer changing what exists to adding a file. Each changelog line says what was removed as well as what was added.
 11. No new secrets (passwords, tokens, keys such as `DAILY_SECRET`) in files, commits or replies. If you find one already committed, tell kura, and don't repeat it.
@@ -49,4 +49,4 @@ A daily seeded Scoundrel game (the solo card game by Zach Gage and Kurt Bieg): e
 - Testing takes 2 to 3 minutes in total, with no edge cases. A repo's required check (such as `npm test`) counts toward that. Need more? Ask first.
 - Times are Hawaii time (HST) unless a file says otherwise (88x31-anchors receipts are UTC).
 - Some repos get automated commits: fetch before you push.
-<!-- END SHARED RULES v7 -->
+<!-- END SHARED RULES v8 -->
