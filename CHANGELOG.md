@@ -4,6 +4,11 @@ Newest first. Times are Hawaii time (HST).
 
 ---
 
+## v0.11.7
+**Sat Oct 31, 2026 · 10:35 PM HST**
+
+- A calmer tab icon: just "88 x 31" in this game's accent colour, wider, inside a bold ASCII `+--+` border, on this page's own background colour (transparent on this black page). Removed: the busy pastel background with the big X, and the numbers' dark outline, white tops and shadow bar.
+
 ## v0.11.6
 **Sat Oct 31, 2026 · 1:35 PM HST**
 
